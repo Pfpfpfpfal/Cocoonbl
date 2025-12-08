@@ -1,6 +1,6 @@
 # Cocoonbl
 ## Description
-
+В папке data хранятся csv(4 файла) (https://www.kaggle.com/code/pavan1512/ieee-cis-fraud-detection)
 ## Cluster Run
 ### Create Network
 ```bash
