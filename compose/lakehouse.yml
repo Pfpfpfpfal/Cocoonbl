@@ -1,0 +1,65 @@
+services:
+  metastore-db:
+    image: mariadb:10.6
+    container_name: metastore-db
+    networks:
+      coc-net:
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: metastore_db
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
+    ports:
+      - "3307:3306"
+
+  hive-metastore:
+    image: bitsondatadev/hive-metastore:latest
+    hostname: hive-metastore
+    container_name: hive-metastore
+    networks:
+      coc-net:
+    depends_on:
+      - metastore-db
+      - minio
+    ports:
+      - "9083:9083"
+    environment:
+      METASTORE_DB_HOSTNAME: metastore-db
+    volumes:
+      - ../hive-conf/hive-site.xml:/opt/apache-hive-metastore-3.0.0-bin/conf/hive-site.xml:ro
+
+  minio:
+    image: minio/minio
+    container_name: minio
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password
+    networks:
+      coc-net:
+    ports:
+      - 9001:9001
+      - 9000:9000
+    command: ["server", "/data", "--console-address", ":9001"]
+
+  mc:
+    depends_on:
+      - minio
+    image: minio/mc
+    container_name: mc
+    networks:
+      coc-net:
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+    entrypoint: |
+      /bin/sh -c "
+      until (/usr/bin/mc alias set minio http://minio:9000 admin password) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc mb minio/warehouse;
+      /usr/bin/mc policy set public minio/warehouse;
+      tail -f /dev/null
+      "
+
+networks:
+  coc-net:
+    external: true
