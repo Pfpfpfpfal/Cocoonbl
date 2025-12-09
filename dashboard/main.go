@@ -1,111 +1,288 @@
 package main
 
 import (
- "net/http"
- "time"
- "github.com/gin-gonic/gin"
+	"context"
+	"database/sql"
+	"log"
+	"net/http"
+	"os"
+	"time"
+	"fmt"
+
+	"github.com/gin-gonic/gin"
+	_ "github.com/trinodb/trino-go-client/trino"
 )
 
 type Summary struct {
- TotalTx int64   `json:"total_tx"`
- FlaggedTx int64   `json:"flagged_tx"`
- AvgScore float64 `json:"avg_score"`
+	TotalTx   int64   `json:"total_tx"`
+	FlaggedTx int64   `json:"flagged_tx"`
+	AvgScore  float64 `json:"avg_score"`
 }
 
 type TimeseriesPoint struct {
- Date string `json:"date"`
- TotalTx int64  `json:"total_tx"`
- FlaggedTx int64  `json:"flagged_tx"`
- AvgScore float64 `json:"avg_score"`
+	Date      string  `json:"date"`
+	TotalTx   int64   `json:"total_tx"`
+	FlaggedTx int64   `json:"flagged_tx"`
+	AvgScore  float64 `json:"avg_score"`
 }
 
 type HistogramBin struct {
- Bin string `json:"bin"`
- Cnt int64 `json:"cnt"`
+	Bin string `json:"bin"`
+	Cnt int64  `json:"cnt"`
 }
 
 type ByChannelRow struct {
- Channel string `json:"channel"`
- TotalTx int64  `json:"total_tx"`
- FlaggedTx int64  `json:"flagged_tx"`
+	Channel   string `json:"channel"`
+	TotalTx   int64  `json:"total_tx"`
+	FlaggedTx int64  `json:"flagged_tx"`
 }
 
 type TopTxnRow struct {
- EventDate string  `json:"event_date"`
- TransactionID string `json:"transaction_id"`
- CustomerID string  `json:"customer_id"`
- Amount float64 `json:"amount"`
- Country string  `json:"country"`
- Channel string  `json:"channel"`
- FraudScore float64 `json:"fraud_score"`
+	EventDate     string  `json:"event_date"`
+	TransactionID string  `json:"transaction_id"`
+	CustomerID    string  `json:"customer_id"`
+	Amount        float64 `json:"amount"`
+	Country       string  `json:"country"`
+	Channel       string  `json:"channel"`
+	FraudScore    float64 `json:"fraud_score"`
+}
+
+var db *sql.DB
+
+func initTrino() *sql.DB {
+	dsn := os.Getenv("TRINO_DSN")
+	if dsn == "" {
+		dsn = "http://admin@localhost:8082?catalog=iceberg&schema=marts"
+	}
+
+	db, err := sql.Open("trino", dsn)
+	if err != nil {
+		log.Fatalf("failed to open trino connection: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		log.Fatalf("failed to ping trino: %v", err)
+	}
+
+	log.Println("Connected to Trino")
+	return db
+}
+
+func getDateRange(c *gin.Context) (string, string) {
+	from := c.Query("from")
+	to := c.Query("to")
+
+	if from == "" {
+		from = "2018-01-01" // посмотреть даты
+	}
+	if to == "" {
+		to = "2018-03-01"
+	}
+	return from, to
 }
 
 func main() {
- r := gin.Default()
- r.LoadHTMLGlob("templates/*")
- r.Static("/static", "./static")
+	db = initTrino()
 
- r.GET("/dashboard", func(c *gin.Context) {
-  c.HTML(http.StatusOK, "dashboard.html", gin.H{})
- })
+	r := gin.Default()
+	
+	r.Static("/static", "./static")
 
- r.GET("/api/summary", func(c *gin.Context) {
-  s := Summary{
-   TotalTx:   100000,
-   FlaggedTx: 2300,
-   AvgScore:  0.12,
-  }
-  c.JSON(http.StatusOK, s)
- })
+	r.GET("/dashboard", func(c *gin.Context) {
+		c.File("./templates/dashboard.html")
+	})
 
- r.GET("/api/timeseries", func(c *gin.Context) {
-  now := time.Now()
-  var res []TimeseriesPoint
-  for i := 6; i >= 0; i-- {
-   d := now.AddDate(0, 0, -i).Format("2006-01-02")
-   res = append(res, TimeseriesPoint{
-    Date:      d,
-    TotalTx:   10000 + int64(i*100),
-    FlaggedTx: 200 + int64(i*10),
-    AvgScore:  0.1 + 0.01*float64(i),
-   })
-  }
-  c.JSON(http.StatusOK, res)
- })
+	r.GET("/api/summary", func(c *gin.Context) {
+		from, to := getDateRange(c)
+		ctx := c.Request.Context()
 
- r.GET("/api/score-histogram", func(c *gin.Context) {
-  bins := []HistogramBin{
-   {"0.0–0.1", 50000},
-   {"0.1–0.2", 20000},
-   {"0.2–0.3", 10000},
-   {"0.3–0.4", 5000},
-   {"0.4–0.5", 3000},
-   {"0.5–0.6", 1500},
-   {"0.6–0.7", 800},
-   {"0.7–0.8", 400},
-   {"0.8–0.9", 200},
-   {"0.9–1.0", 100},
-  }
-  c.JSON(http.StatusOK, bins)
- })
+		query := fmt.Sprintf(`
+		SELECT
+			count(*) AS total_tx,
+			sum(CASE WHEN fraud_label = 1 THEN 1 ELSE 0 END) AS flagged_tx,
+			avg(fraud_score) AS avg_score
+		FROM iceberg.marts.scored_transactions
+		WHERE event_date BETWEEN DATE '%s' AND DATE '%s'`,
+		from, to,
+		)
 
- r.GET("/api/by-channel", func(c *gin.Context) {
-  data := []ByChannelRow{
-   {"WEB", 60000, 1200},
-   {"MOBILE", 35000, 900},
-   {"UNKNOWN", 5000, 200},
-  }
-  c.JSON(http.StatusOK, data)
- })
+		var s Summary
+		err := db.QueryRowContext(ctx, query).Scan(&s.TotalTx, &s.FlaggedTx, &s.AvgScore)
+		if err != nil {
+			log.Println("summary query error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "summary query failed"})
+			return
+		}
+		c.JSON(http.StatusOK, s)
+	})
 
- r.GET("/api/top-transactions", func(c *gin.Context) {
-  data := []TopTxnRow{
-   {"2018-01-01", "T0001", "C123", 999.99, "US", "WEB", 0.98},
-   {"2018-01-01", "T0002", "C456", 750.50, "DE", "MOBILE", 0.95},
-   {"2018-01-02", "T0003", "C789", 500.00, "FR", "WEB", 0.93},
-  }
-  c.JSON(http.StatusOK, data)
- })
+	r.GET("/api/timeseries", func(c *gin.Context) {
+		from, to := getDateRange(c)
+		ctx := c.Request.Context()
 
- r.Run(":8080")
+		query := fmt.Sprintf(`
+		SELECT
+			CAST(event_date AS VARCHAR) AS d,
+			count(*) AS total_tx,
+			sum(CASE WHEN fraud_label = 1 THEN 1 ELSE 0 END) AS flagged_tx,
+			avg(fraud_score) AS avg_score
+		FROM iceberg.marts.scored_transactions
+		WHERE event_date BETWEEN DATE '%s' AND DATE '%s'
+		GROUP BY event_date
+		ORDER BY event_date`,
+		from, to,
+		)
+
+		rows, err := db.QueryContext(ctx, query)
+		if err != nil {
+			log.Println("timeseries query error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "timeseries query failed"})
+			return
+		}
+		defer rows.Close()
+
+		var result []TimeseriesPoint
+		for rows.Next() {
+			var p TimeseriesPoint
+			if err := rows.Scan(&p.Date, &p.TotalTx, &p.FlaggedTx, &p.AvgScore); err != nil {
+				log.Println("timeseries scan error:", err)
+				continue
+			}
+			result = append(result, p)
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	r.GET("/api/score-histogram", func(c *gin.Context) {
+		from, to := getDateRange(c)
+		ctx := c.Request.Context()
+
+		query := fmt.Sprintf(`
+		SELECT
+			CAST(floor(fraud_score * 10) / 10.0 AS double) AS bin_from,
+			count(*) AS cnt
+		FROM iceberg.marts.scored_transactions
+		WHERE event_date BETWEEN DATE '%s' AND DATE '%s'
+		GROUP BY floor(fraud_score * 10)
+		ORDER BY bin_from`,
+		from, to,
+		)
+
+		rows, err := db.QueryContext(ctx, query)
+		if err != nil {
+			log.Println("hist query error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "histogram query failed"})
+			return
+		}
+		defer rows.Close()
+
+		var result []HistogramBin
+		for rows.Next() {
+			var binFrom float64
+			var cnt int64
+			if err := rows.Scan(&binFrom, &cnt); err != nil {
+				log.Println("hist scan error:", err)
+				continue
+			}
+			label := formatBin(binFrom)
+			result = append(result, HistogramBin{Bin: label, Cnt: cnt})
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	r.GET("/api/by-channel", func(c *gin.Context) {
+		from, to := getDateRange(c)
+		ctx := c.Request.Context()
+
+		query := fmt.Sprintf(`
+		SELECT
+			COALESCE(channel, 'UNKNOWN') AS channel,
+			count(*) AS total_tx,
+			sum(CASE WHEN fraud_label = 1 THEN 1 ELSE 0 END) AS flagged_tx
+		FROM iceberg.marts.scored_transactions
+		WHERE event_date BETWEEN DATE '%s' AND DATE '%s'
+		GROUP BY COALESCE(channel, 'UNKNOWN')
+		ORDER BY flagged_tx DESC`,
+		from, to,
+		)
+
+		rows, err := db.QueryContext(ctx, query)
+		if err != nil {
+			log.Println("by-channel query error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "by-channel query failed"})
+			return
+		}
+		defer rows.Close()
+
+		var result []ByChannelRow
+		for rows.Next() {
+			var rrow ByChannelRow
+			if err := rows.Scan(&rrow.Channel, &rrow.TotalTx, &rrow.FlaggedTx); err != nil {
+				log.Println("by-channel scan error:", err)
+				continue
+			}
+			result = append(result, rrow)
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	r.GET("/api/top-transactions", func(c *gin.Context) {
+		from, to := getDateRange(c)
+		ctx := c.Request.Context()
+
+		query := fmt.Sprintf(`
+		SELECT
+			CAST(event_date AS VARCHAR) AS event_date,
+			transaction_id,
+			customer_id,
+			amount,
+			COALESCE(country, '') AS country,
+			COALESCE(channel, '') AS channel,
+			fraud_score
+		FROM iceberg.marts.scored_transactions
+		WHERE event_date BETWEEN DATE '%s' AND DATE '%s'
+		ORDER BY fraud_score DESC
+		LIMIT 100`,
+		from, to,
+		)
+
+		rows, err := db.QueryContext(ctx, query)
+		if err != nil {
+			log.Println("top-tx query error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "top-transactions query failed"})
+			return
+		}
+		defer rows.Close()
+
+		var result []TopTxnRow
+		for rows.Next() {
+			var rrow TopTxnRow
+			if err := rows.Scan(
+				&rrow.EventDate,
+				&rrow.TransactionID,
+				&rrow.CustomerID,
+				&rrow.Amount,
+				&rrow.Country,
+				&rrow.Channel,
+				&rrow.FraudScore,
+			); err != nil {
+				log.Println("top-tx scan error:", err)
+				continue
+			}
+			result = append(result, rrow)
+		}
+		c.JSON(http.StatusOK, result)
+	})
+
+	log.Println("Dashboard listening on :8080")
+	if err := r.Run(":8080"); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func formatBin(from float64) string {
+	to := from + 0.1
+	return fmt.Sprintf("%.1f–%.1f", from, to)
 }

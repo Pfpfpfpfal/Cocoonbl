@@ -1,4 +1,3 @@
-`
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -51,7 +50,6 @@
 </head>
 <body>
 <div class="layout">
-  <!-- KPI -->
   <div class="card kpi">
     <div class="kpi-title">Всего транзакций</div>
     <div id="kpi-total" class="kpi-value">—</div>
@@ -101,7 +99,6 @@ async function fetchJSON(url) {
 }
 
 async function initDashboard() {
-  // KPI
   const summary = await fetchJSON('/api/summary');
   const total = summary.total_tx;
   const flagged = summary.flagged_tx;
@@ -112,7 +109,6 @@ async function initDashboard() {
   document.getElementById('kpi-rate').textContent = rate;
   document.getElementById('kpi-avg').textContent = summary.avg_score.toFixed(3);
 
-  // Timeseries
   const tsData = await fetchJSON('/api/timeseries');
   const tsChart = echarts.init(document.getElementById('chart-timeseries'));
   tsChart.setOption({
@@ -135,7 +131,6 @@ async function initDashboard() {
     ]
   });
 
-  // Histogram
   const hist = await fetchJSON('/api/score-histogram');
   const histChart = echarts.init(document.getElementById('chart-score-hist'));
   histChart.setOption({
@@ -155,7 +150,6 @@ async function initDashboard() {
     series: [{ type: 'bar', data: hist.map(d => d.cnt) }]
   });
 
-  // By channel
   const byChannel = await fetchJSON('/api/by-channel');
   const chanChart = echarts.init(document.getElementById('chart-by-channel'));
   chanChart.setOption({
@@ -200,4 +194,3 @@ initDashboard().catch(err => {
 </script>
 </body>
 </html>
-`
