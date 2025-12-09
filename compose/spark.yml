@@ -8,6 +8,7 @@ services:
       - ../notebooks:/workspace
       - ../spark-conf:/opt/spark/conf
       - ../data:/data
+      - ../model/ml:/models
     ports:
       - "4040:4040"
       - "8888:8888"
