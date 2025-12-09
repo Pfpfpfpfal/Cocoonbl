@@ -1,3 +1,5 @@
 /data/*.csv
 /notebooks/.ipynb_checkpoints
 /notebooks/.Trash-0
+/notebooks/ml_dataset
+/notebooks/hive_cat.features.ml_dataset
