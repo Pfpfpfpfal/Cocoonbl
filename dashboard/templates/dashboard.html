@@ -116,115 +116,53 @@ async function fetchJSON(url) {
 
 async function renderFraud3D(from, to) {
   const points = await fetchJSON(`/api/fraud-cloud-3d?from=${from}&to=${to}`);
-  const el = document.getElementById('chart-fraud-3d');
-  const chart = echarts.init(el);
+  const chart = echarts.init(document.getElementById('chart-fraud-3d'));
 
-  if (!points || points.length === 0) {
+  if (points.length === 0) {
     chart.clear();
-    chart.setOption({
-      backgroundColor: 'transparent',
-      title: {
-        text: 'Нет данных для выбранного периода',
-        left: 'center',
-        top: 'middle',
-        textStyle: { color: '#9ca3af', fontSize: 12 }
-      }
-    });
     return;
   }
 
-  const data = points.map(p => [p.amount_log, p.dow, p.score, p.label]);
+  const data = points.map(p => [p.x, p.y, p.z, p.label, p.score]);
 
   chart.setOption({
     backgroundColor: 'transparent',
     tooltip: {
-      formatter: (params) => {
-        const d = params.data;
-        const amountLog = d[0];
-        const dow = d[1];
-        const score = d[2];
-        const label = d[3];
-        const approxAmount = Math.pow(10, amountLog) - 1;
-
-        const dowNames = {
-          1: 'Понедельник',
-          2: 'Вторник',
-          3: 'Среда',
-          4: 'Четверг',
-          5: 'Пятница',
-          6: 'Суббота',
-          7: 'Воскресенье',
-        };
-
-        return [
-          `День недели: ${dowNames[dow] || dow}`,
-          `Сумма (≈): ${approxAmount.toFixed(2)}`,
-          `Fraud score: ${score.toFixed(3)}`,
-          `Фрод: ${label === 1 ? 'Да' : 'Нет'}`
-        ].join('<br>');
+      formatter: (p) => {
+        const [x,y,z,label,score] = p.data;
+        return `
+          log(amount): ${x.toFixed(2)}<br>
+          secs_since_prev_txn: ${y.toFixed(0)}<br>
+          cust_txn_cnt_7d: ${z}<br>
+          fraud_score: ${score.toFixed(3)}<br>
+          fraud: ${label === 1 ? 'Да' : 'Нет'}
+        `;
       }
     },
     visualMap: [{
-      show: true,
       dimension: 3,
-      categories: [0, 1],
-      inRange: {
-        color: ['#4ade80', '#f97373']
-      },
-      text: ['Фрод', 'Норма'],
-      textStyle: { color: '#e5e7eb' }
+      categories: [0,1],
+      inRange: { color: ['#4ade80', '#f97373'] }
     }],
     grid3D: {
       viewControl: {
-        projection: 'perspective',
         autoRotate: true,
         autoRotateSpeed: 8,
-        autoRotateAfterStill: 3,
         rotateSensitivity: 1.2,
         zoomSensitivity: 1.2
       },
       boxWidth: 200,
-      boxHeight: 140,
-      boxDepth: 160,
+      boxDepth: 180,
+      boxHeight: 160
     },
-    xAxis3D: {
-      type: 'value',
-      name: 'log₁₀(Amount)',
-      nameTextStyle: { color: '#9ca3af' },
-      axisLine: { lineStyle: { color: '#64748b' } },
-      axisLabel: {
-        color: '#9ca3af',
-        formatter: v => v.toFixed(1)
-      }
-    },
-    yAxis3D: {
-      type: 'value',
-      name: 'Day of week',
-      min: 1,
-      max: 7,
-      nameTextStyle: { color: '#9ca3af' },
-      axisLine: { lineStyle: { color: '#64748b' } },
-      axisLabel: { color: '#9ca3af' }
-    },
-    zAxis3D: {
-      type: 'value',
-      name: 'Fraud score',
-      min: 0,
-      max: 1,
-      nameTextStyle: { color: '#9ca3af' },
-      axisLine: { lineStyle: { color: '#64748b' } },
-      axisLabel: { color: '#9ca3af' }
-    },
+    xAxis3D: { name: "log(amount)" },
+    yAxis3D: { name: "log(secs_prev_txn)" },
+    zAxis3D: { name: "lgo(txn_cnt_7d)" },
     series: [{
       type: 'scatter3D',
       data,
-      symbolSize: (val) => {
-        const score = val[2];
-        return 5 + score * 10;
-      },
-      itemStyle: {
-        opacity: 0.9
-      }
+      symbolSize: p => 4 + p[4] * 10,
+      itemStyle: { opacity: 0.9 }
     }]
   });
 }

@@ -54,8 +54,9 @@ var (
 )
 
 type FraudPoint struct {
-    AmountLog float64 `json:"amount_log"`
-    Dow int `json:"dow"`
+    X float64 `json:"x"`
+    Y float64 `json:"y"`
+    Z float64 `json:"z"`
     Score float64 `json:"score"`
     Label int `json:"label"`
 }
@@ -314,10 +315,11 @@ func main() {
 
 		query := fmt.Sprintf(`
 			SELECT
-			log10(amount + 1) AS amount_log,
-			day_of_week(event_date) AS dow,
+			log_amount,
+			log10(secs_since_prev_txn + 1)       AS log_secs_prev,
+			log10(cust_txn_cnt_7d + 1)           AS log_txn_cnt_7d,
 			fraud_score,
-			CAST(fraud_label AS integer) AS fraud_label
+			CAST(fraud_label AS integer)
 			FROM iceberg.marts.scored_transactions
 			WHERE event_date BETWEEN DATE '%s' AND DATE '%s'
 			ORDER BY rand()
@@ -328,28 +330,22 @@ func main() {
 		rows, err := db.QueryContext(ctx, query)
 		if err != nil {
 			log.Println("fraud-cloud-3d query error:", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+			c.JSON(500, gin.H{"error": "query failed"})
 			return
 		}
 		defer rows.Close()
 
 		var pts []FraudPoint
 		for rows.Next() {
-			var aLog, score float64
-			var dow, label int
-			if err := rows.Scan(&aLog, &dow, &score, &label); err != nil {
-				log.Println("fraud-cloud-3d scan error:", err)
+			var x, y, z, score float64
+			var label int
+			if err := rows.Scan(&x, &y, &z, &score, &label); err != nil {
 				continue
 			}
-			pts = append(pts, FraudPoint{
-				AmountLog: aLog,
-				Dow:       dow,
-				Score:     score,
-				Label:     label,
-			})
+			pts = append(pts, FraudPoint{x, y, z, score, label})
 		}
 
-		c.JSON(http.StatusOK, pts)
+		c.JSON(200, pts)
 	})
 
 	log.Println("Dashboard listening on :8080")
