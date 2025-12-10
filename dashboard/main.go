@@ -123,8 +123,11 @@ func main() {
 		query := fmt.Sprintf(`
 		SELECT
 			count(*) AS total_tx,
-			sum(CASE WHEN fraud_label = 1 THEN 1 ELSE 0 END) AS flagged_tx,
-			avg(fraud_score) AS avg_score
+			coalesce(
+				sum(CASE WHEN fraud_label = 1 THEN 1 ELSE 0 END),
+				0) AS flagged_tx,
+			coalesce(
+				avg(fraud_score), 0.0) AS avg_score
 		FROM iceberg.marts.scored_transactions
 		WHERE event_date BETWEEN DATE '%s' AND DATE '%s'`,
 		from, to,
