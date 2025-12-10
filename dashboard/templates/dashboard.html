@@ -4,12 +4,17 @@
   <meta charset="UTF-8">
   <title>Anti-fraud Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts-gl@2/dist/echarts-gl.min.js"></script>
   <style>
     body {
       margin: 0;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: #020617;
       color: #e5e7eb;
+    }
+    .top-table-scroll {
+      max-height: 260px;
+      overflow-y: auto;
     }
     .layout {
       padding: 16px;
@@ -50,6 +55,15 @@
 </head>
 <body>
 <div class="layout">
+  <div class="card" style="grid-column: span 12; display:flex; gap:12px; align-items:center;">
+    <span style="font-size: 13px; color:#9ca3af;">Период:</span>
+    <input id="from-date" type="date" style="background:#020617;border:1px solid #1f2937;border-radius:8px;padding:4px 8px;color:#e5e7eb;">
+    <span>—</span>
+    <input id="to-date" type="date" style="background:#020617;border:1px solid #1f2937;border-radius:8px;padding:4px 8px;color:#e5e7eb;">
+    <button id="apply-range" style="margin-left:8px;padding:4px 12px;border-radius:8px;border:none;background:#2563eb;color:white;cursor:pointer;">
+      Применить
+    </button>
+  </div>
   <div class="card kpi">
     <div class="kpi-title">Всего транзакций</div>
     <div id="kpi-total" class="kpi-value">—</div>
@@ -67,6 +81,8 @@
     <div id="kpi-avg" class="kpi-value">—</div>
   </div>
 
+  <div id="chart-fraud-3d-cluster" class="card" style="grid-column: span 6; height: 520px;"></div>
+  <div id="chart-fraud-3d" class="card" style="grid-column: span 6; height: 520px;"></div>
   <div id="chart-timeseries" class="card"></div>
   <div id="chart-score-hist" class="card"></div>
   <div id="chart-by-channel" class="card"></div>
@@ -74,23 +90,24 @@
 
   <div id="table-top" class="card">
     <div style="font-size: 14px; margin-bottom: 8px;">Топ подозрительных транзакций</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Дата</th>
-          <th>Txn</th>
-          <th>Клиент</th>
-          <th>Сумма</th>
-          <th>Страна</th>
-          <th>Канал</th>
-          <th>Скор</th>
-        </tr>
-      </thead>
-      <tbody id="top-body"></tbody>
-    </table>
+      <div class="top-table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Дата</th>
+              <th>Txn</th>
+              <th>Клиент</th>
+              <th>Сумма</th>
+              <th>Страна</th>
+              <th>Канал</th>
+              <th>Скор</th>
+            </tr>
+          </thead>
+          <tbody id="top-body"></tbody>
+        </table>
+      </div>
   </div>
 </div>
-
 <script>
 async function fetchJSON(url) {
   const res = await fetch(url);
@@ -98,8 +115,110 @@ async function fetchJSON(url) {
   return await res.json();
 }
 
-async function initDashboard() {
-  const summary = await fetchJSON('/api/summary');
+async function renderFraud3D(from, to) {
+  const points = await fetchJSON(`/api/fraud-cloud-3d?from=${from}&to=${to}`);
+  const chart = echarts.init(document.getElementById('chart-fraud-3d'));
+
+  if (points.length === 0) {
+    chart.clear();
+    return;
+  }
+
+  const data = points.map(p => [p.x, p.y, p.z, p.label, p.score]);
+
+  chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      formatter: (p) => {
+        const [x,y,z,label,score] = p.data;
+        return `
+          log(amount): ${x.toFixed(2)}<br>
+          secs_since_prev_txn: ${y.toFixed(0)}<br>
+          cust_txn_cnt_7d: ${z}<br>
+          fraud_score: ${score.toFixed(3)}<br>
+          fraud: ${label === 1 ? 'Да' : 'Нет'}
+        `;
+      }
+    },
+    visualMap: [{
+      dimension: 3,
+      categories: [0,1],
+      inRange: { color: ['#4ade80', '#f97373'] }
+    }],
+    grid3D: {
+      viewControl: {
+        autoRotate: false,
+        autoRotateSpeed: 8,
+        rotateSensitivity: 1.2,
+        zoomSensitivity: 1.2
+      },
+      boxWidth: 200,
+      boxDepth: 180,
+      boxHeight: 160
+    },
+    xAxis3D: { name: "log(amount)" },
+    yAxis3D: { name: "log(secs_prev_txn)" },
+    zAxis3D: { name: "lgo(txn_cnt_7d)" },
+    series: [{
+      type: 'scatter3D',
+      data,
+      symbolSize: p => 4 + p[4] * 10,
+      itemStyle: { opacity: 0.9 }
+    }]
+  });
+}
+
+async function renderFraud3Dc(from, to) {
+  const points = await fetchJSON(`/api/fraud-cloud-3d-cluster?from=${from}&to=${to}`);
+  const chart = echarts.init(document.getElementById('chart-fraud-3d-cluster'));
+
+  if (points.length === 0) return chart.clear();
+
+  const data = points.map(p => [p.x, p.y, p.z, p.cluster, p.score, p.label]);
+
+  chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      formatter: (p) => {
+        const [x,y,z,cluster,score,label] = p.data;
+        return `
+          log(amount): ${x.toFixed(2)}<br>
+          log_secs_prev: ${y.toFixed(2)}<br>
+          log_txn_cnt_7d: ${z.toFixed(2)}<br>
+          fraud_score: ${score.toFixed(3)}<br>
+          fraud_label: ${label}<br>
+          cluster: ${cluster}
+        `;
+      }
+    },
+    visualMap: [{
+      dimension: 3,
+      min: 0,
+      max: 6,
+      calculable: true,
+      inRange: { color: ['#3b82f6', '#10b981', '#f97316', '#ef4444', '#a855f7', '#14b8a6', '#eab308'] }
+    }],
+    grid3D: {
+      viewControl: {
+        autoRotate: false,
+        rotateSensitivity: 1.2,
+        zoomSensitivity: 1.2
+      }
+    },
+    xAxis3D: { name: "log(amount)" },
+    yAxis3D: { name: "log(secs_prev)" },
+    zAxis3D: { name: "log(txn_cnt_7d)" },
+    series: [{
+      type: 'scatter3D',
+      data,
+      symbolSize: p => 5 + p[4] * 8,
+      itemStyle: { opacity: 0.9 }
+    }]
+  });
+}
+
+async function initDashboard(from, to) {
+  const summary = await fetchJSON(`/api/summary?from=${from}&to=${to}`);
   const total = summary.total_tx;
   const flagged = summary.flagged_tx;
   const rate = total ? (flagged * 100 / total).toFixed(2) + '%' : '0%';
@@ -109,7 +228,7 @@ async function initDashboard() {
   document.getElementById('kpi-rate').textContent = rate;
   document.getElementById('kpi-avg').textContent = summary.avg_score.toFixed(3);
 
-  const tsData = await fetchJSON('/api/timeseries');
+  const tsData = await fetchJSON(`/api/timeseries?from=${from}&to=${to}`);
   const tsChart = echarts.init(document.getElementById('chart-timeseries'));
   tsChart.setOption({
     backgroundColor: 'transparent',
@@ -122,7 +241,8 @@ async function initDashboard() {
       axisLine: { lineStyle: { color: '#64748b' } }
     },
     yAxis: {
-      type: 'value',axisLine: { lineStyle: { color: '#64748b' } },
+      type: 'value',
+      axisLine: { lineStyle: { color: '#64748b' } },
       splitLine: { lineStyle: { color: '#1f2937' } }
     },
     series: [
@@ -131,7 +251,7 @@ async function initDashboard() {
     ]
   });
 
-  const hist = await fetchJSON('/api/score-histogram');
+  const hist = await fetchJSON(`/api/score-histogram?from=${from}&to=${to}`);
   const histChart = echarts.init(document.getElementById('chart-score-hist'));
   histChart.setOption({
     backgroundColor: 'transparent',
@@ -150,7 +270,7 @@ async function initDashboard() {
     series: [{ type: 'bar', data: hist.map(d => d.cnt) }]
   });
 
-  const byChannel = await fetchJSON('/api/by-channel');
+  const byChannel = await fetchJSON(`/api/by-channel?from=${from}&to=${to}`);
   const chanChart = echarts.init(document.getElementById('chart-by-channel'));
   chanChart.setOption({
     backgroundColor: 'transparent',
@@ -173,24 +293,42 @@ async function initDashboard() {
     ]
   });
 
-  const top = await fetchJSON('/api/top-transactions');
+  const top = await fetchJSON(`/api/top-transactions?from=${from}&to=${to}`);
   const tbody = document.getElementById('top-body');
-  tbody.innerHTML = top.map(row => 
-    '<tr>' +
-      '<td>' + row.event_date +'</td>' +
-      '<td>' + row.transaction_id +'</td>' +
-      '<td>' + row.customer_id +'</td>' +
-      '<td>' + row.amount.toFixed(2) +'</td>' +
-      '<td>' + row.country || '' +'</td>' +
-      '<td>' + row.channel || '' +'</td>' +
-      '<td>' + row.fraud_score.toFixed(3) +'</td>' +
-    '</tr>'
-  ).join('');
+  tbody.innerHTML = top.map(row => `
+    <tr>
+      <td>${row.event_date}</td>
+      <td>${row.transaction_id}</td>
+      <td>${row.customer_id}</td>
+      <td>${(row.amount ?? 0).toFixed(2)}</td>
+      <td>${row.country || ''}</td>
+      <td>${row.channel || ''}</td>
+      <td>${row.fraud_score.toFixed(3)}</td>
+    </tr>
+  `).join('');
+
+  await renderFraud3Dc(from, to);
+  await renderFraud3D(from, to);
 }
 
-initDashboard().catch(err => {
-  console.error(err);
-});
+async function init() {
+  const range = await fetchJSON('/api/date-range');
+  const fromInput = document.getElementById('from-date');
+  const toInput = document.getElementById('to-date');
+
+  fromInput.value = range.from;
+  toInput.value = range.to;
+
+  document.getElementById('apply-range').onclick = () => {
+    const from = fromInput.value;
+    const to = toInput.value;
+    initDashboard(from, to).catch(console.error);
+  };
+
+  await initDashboard(range.from, range.to);
+}
+
+init().catch(console.error);
 </script>
 </body>
 </html>
