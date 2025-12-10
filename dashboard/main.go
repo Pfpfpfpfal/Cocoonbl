@@ -53,6 +53,15 @@ var (
     defaultTo string
 )
 
+type FraudPointC struct {
+    X float64 `json:"x"`
+    Y float64 `json:"y"`
+    Z float64 `json:"z"`
+    Score float64 `json:"score"`
+    Label int `json:"label"`
+    Cluster int `json:"cluster"`
+}
+
 type FraudPoint struct {
     X float64 `json:"x"`
     Y float64 `json:"y"`
@@ -343,6 +352,46 @@ func main() {
 				continue
 			}
 			pts = append(pts, FraudPoint{x, y, z, score, label})
+		}
+
+		c.JSON(200, pts)
+	})
+	
+	r.GET("/api/fraud-cloud-3d-cluster", func(c *gin.Context) {
+		from, to := getDateRange(c)
+		ctx := c.Request.Context()
+
+		query := fmt.Sprintf(`
+		SELECT
+			c.log_amount,
+			c.log_secs_prev,
+			c.log_txn_cnt_7d,
+			c.fraud_score,
+			c.fraud_label,
+			c.cluster
+		FROM iceberg.marts.scored_transactions_clustered c
+		JOIN iceberg.marts.scored_transactions s
+			ON c.transaction_id = s.transaction_id
+		WHERE s.event_date BETWEEN DATE '%s' AND DATE '%s'
+		ORDER BY rand()
+		LIMIT 3000`,
+		from, to,
+	)
+
+		rows, err := db.QueryContext(ctx, query)
+		if err != nil {
+			log.Println("fraud-cloud-3d-cluster query error:", err)
+			c.JSON(500, gin.H{"error": "query failed"})
+			return
+		}
+		defer rows.Close()
+
+		var pts []FraudPointC
+		for rows.Next() {
+			var x, y, z, score float64
+			var label, cluster int
+			rows.Scan(&x, &y, &z, &score, &label, &cluster)
+			pts = append(pts, FraudPointC{x, y, z, score, label, cluster})
 		}
 
 		c.JSON(200, pts)

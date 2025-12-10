@@ -81,7 +81,8 @@
     <div id="kpi-avg" class="kpi-value">—</div>
   </div>
 
-  <div id="chart-fraud-3d" class="card" style="grid-column: span 12; height: 520px;"></div>
+  <div id="chart-fraud-3d-cluster" class="card" style="grid-column: span 6; height: 520px;"></div>
+  <div id="chart-fraud-3d" class="card" style="grid-column: span 6; height: 520px;"></div>
   <div id="chart-timeseries" class="card"></div>
   <div id="chart-score-hist" class="card"></div>
   <div id="chart-by-channel" class="card"></div>
@@ -146,7 +147,7 @@ async function renderFraud3D(from, to) {
     }],
     grid3D: {
       viewControl: {
-        autoRotate: true,
+        autoRotate: false,
         autoRotateSpeed: 8,
         rotateSensitivity: 1.2,
         zoomSensitivity: 1.2
@@ -162,6 +163,55 @@ async function renderFraud3D(from, to) {
       type: 'scatter3D',
       data,
       symbolSize: p => 4 + p[4] * 10,
+      itemStyle: { opacity: 0.9 }
+    }]
+  });
+}
+
+async function renderFraud3Dc(from, to) {
+  const points = await fetchJSON(`/api/fraud-cloud-3d-cluster?from=${from}&to=${to}`);
+  const chart = echarts.init(document.getElementById('chart-fraud-3d-cluster'));
+
+  if (points.length === 0) return chart.clear();
+
+  const data = points.map(p => [p.x, p.y, p.z, p.cluster, p.score, p.label]);
+
+  chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      formatter: (p) => {
+        const [x,y,z,cluster,score,label] = p.data;
+        return `
+          log(amount): ${x.toFixed(2)}<br>
+          log_secs_prev: ${y.toFixed(2)}<br>
+          log_txn_cnt_7d: ${z.toFixed(2)}<br>
+          fraud_score: ${score.toFixed(3)}<br>
+          fraud_label: ${label}<br>
+          cluster: ${cluster}
+        `;
+      }
+    },
+    visualMap: [{
+      dimension: 3,
+      min: 0,
+      max: 6,
+      calculable: true,
+      inRange: { color: ['#3b82f6', '#10b981', '#f97316', '#ef4444', '#a855f7', '#14b8a6', '#eab308'] }
+    }],
+    grid3D: {
+      viewControl: {
+        autoRotate: false,
+        rotateSensitivity: 1.2,
+        zoomSensitivity: 1.2
+      }
+    },
+    xAxis3D: { name: "log(amount)" },
+    yAxis3D: { name: "log(secs_prev)" },
+    zAxis3D: { name: "log(txn_cnt_7d)" },
+    series: [{
+      type: 'scatter3D',
+      data,
+      symbolSize: p => 5 + p[4] * 8,
       itemStyle: { opacity: 0.9 }
     }]
   });
@@ -257,6 +307,7 @@ async function initDashboard(from, to) {
     </tr>
   `).join('');
 
+  await renderFraud3Dc(from, to);
   await renderFraud3D(from, to);
 }
 
