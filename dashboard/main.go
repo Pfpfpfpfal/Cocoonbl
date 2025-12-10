@@ -53,6 +53,13 @@ var (
     defaultTo string
 )
 
+type FraudPoint struct {
+    AmountLog float64 `json:"amount_log"`
+    Dow int `json:"dow"`
+    Score float64 `json:"score"`
+    Label int `json:"label"`
+}
+
 func initTrinoAndDateRange() *sql.DB {
     dsn := os.Getenv("TRINO_DSN")
     if dsn == "" {
@@ -299,6 +306,50 @@ func main() {
 			result = append(result, rrow)
 		}
 		c.JSON(http.StatusOK, result)
+	})
+
+	r.GET("/api/fraud-cloud-3d", func(c *gin.Context) {
+		from, to := getDateRange(c)
+		ctx := c.Request.Context()
+
+		query := fmt.Sprintf(`
+			SELECT
+			log10(amount + 1) AS amount_log,
+			day_of_week(event_date) AS dow,
+			fraud_score,
+			CAST(fraud_label AS integer) AS fraud_label
+			FROM iceberg.marts.scored_transactions
+			WHERE event_date BETWEEN DATE '%s' AND DATE '%s'
+			ORDER BY rand()
+			LIMIT 3000`,
+			from, to,
+		)
+
+		rows, err := db.QueryContext(ctx, query)
+		if err != nil {
+			log.Println("fraud-cloud-3d query error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+			return
+		}
+		defer rows.Close()
+
+		var pts []FraudPoint
+		for rows.Next() {
+			var aLog, score float64
+			var dow, label int
+			if err := rows.Scan(&aLog, &dow, &score, &label); err != nil {
+				log.Println("fraud-cloud-3d scan error:", err)
+				continue
+			}
+			pts = append(pts, FraudPoint{
+				AmountLog: aLog,
+				Dow:       dow,
+				Score:     score,
+				Label:     label,
+			})
+		}
+
+		c.JSON(http.StatusOK, pts)
 	})
 
 	log.Println("Dashboard listening on :8080")
