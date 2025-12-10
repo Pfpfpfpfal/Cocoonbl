@@ -14,77 +14,92 @@ import (
 )
 
 type Summary struct {
-	TotalTx   int64   `json:"total_tx"`
-	FlaggedTx int64   `json:"flagged_tx"`
-	AvgScore  float64 `json:"avg_score"`
+	TotalTx int64 `json:"total_tx"`
+	FlaggedTx int64 `json:"flagged_tx"`
+	AvgScore float64 `json:"avg_score"`
 }
 
 type TimeseriesPoint struct {
-	Date      string  `json:"date"`
-	TotalTx   int64   `json:"total_tx"`
-	FlaggedTx int64   `json:"flagged_tx"`
-	AvgScore  float64 `json:"avg_score"`
+	Date string `json:"date"`
+	TotalTx int64 `json:"total_tx"`
+	FlaggedTx int64 `json:"flagged_tx"`
+	AvgScore float64 `json:"avg_score"`
 }
 
 type HistogramBin struct {
 	Bin string `json:"bin"`
-	Cnt int64  `json:"cnt"`
+	Cnt int64 `json:"cnt"`
 }
 
 type ByChannelRow struct {
-	Channel   string `json:"channel"`
-	TotalTx   int64  `json:"total_tx"`
-	FlaggedTx int64  `json:"flagged_tx"`
+	Channel string `json:"channel"`
+	TotalTx int64 `json:"total_tx"`
+	FlaggedTx int64 `json:"flagged_tx"`
 }
 
 type TopTxnRow struct {
-	EventDate     string  `json:"event_date"`
+	EventDate string  `json:"event_date"`
 	TransactionID string  `json:"transaction_id"`
-	CustomerID    string  `json:"customer_id"`
-	Amount        float64 `json:"amount"`
-	Country       string  `json:"country"`
-	Channel       string  `json:"channel"`
-	FraudScore    float64 `json:"fraud_score"`
+	CustomerID string  `json:"customer_id"`
+	Amount float64 `json:"amount"`
+	Country string `json:"country"`
+	Channel string `json:"channel"`
+	FraudScore float64 `json:"fraud_score"`
 }
 
-var db *sql.DB
+var (
+    db *sql.DB
+    defaultFrom string
+    defaultTo string
+)
 
-func initTrino() *sql.DB {
-	dsn := os.Getenv("TRINO_DSN")
-	if dsn == "" {
-		dsn = "http://admin@localhost:8082?catalog=iceberg&schema=marts"
-	}
+func initTrinoAndDateRange() *sql.DB {
+    dsn := os.Getenv("TRINO_DSN")
+    if dsn == "" {
+        dsn = "http://admin@localhost:8082?catalog=iceberg&schema=marts"
+    }
 
-	db, err := sql.Open("trino", dsn)
-	if err != nil {
-		log.Fatalf("failed to open trino connection: %v", err)
-	}
+    db, err := sql.Open("trino", dsn)
+    if err != nil {
+        log.Fatalf("failed to open trino connection: %v", err)
+    }
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		log.Fatalf("failed to ping trino: %v", err)
-	}
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    if err := db.PingContext(ctx); err != nil {
+        log.Fatalf("failed to ping trino: %v", err)
+    }
+    log.Println("Connected to Trino")
 
-	log.Println("Connected to Trino")
-	return db
+    row := db.QueryRowContext(ctx, `
+        select
+          cast(min(event_date) as varchar),
+          cast(max(event_date) as varchar)
+        from iceberg.marts.scored_transactions`)
+
+    if err := row.Scan(&defaultFrom, &defaultTo); err != nil {
+        log.Fatalf("failed to get default date range: %v", err)
+    }
+    log.Printf("Default date range: %s .. %s\n", defaultFrom, defaultTo)
+
+    return db
 }
 
 func getDateRange(c *gin.Context) (string, string) {
-	from := c.Query("from")
-	to := c.Query("to")
+    from := c.Query("from")
+    to := c.Query("to")
 
-	if from == "" {
-		from = "2018-01-01" // посмотреть даты
-	}
-	if to == "" {
-		to = "2018-03-01"
-	}
-	return from, to
+    if from == "" {
+        from = defaultFrom
+    }
+    if to == "" {
+        to = defaultTo
+    }
+    return from, to
 }
 
 func main() {
-	db = initTrino()
+	db = initTrinoAndDateRange()
 
 	r := gin.Default()
 	
@@ -92,6 +107,13 @@ func main() {
 
 	r.GET("/dashboard", func(c *gin.Context) {
 		c.File("./templates/dashboard.html")
+	})
+
+	r.GET("/api/date-range", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"from": defaultFrom,
+			"to": defaultTo,
+		})
 	})
 
 	r.GET("/api/summary", func(c *gin.Context) {
@@ -239,7 +261,7 @@ func main() {
 			customer_id,
 			amount,
 			COALESCE(country, '') AS country,
-			COALESCE(channel, '') AS channel,
+			COALESCE(channel, 'UNKNOWN') AS channel,
 			fraud_score
 		FROM iceberg.marts.scored_transactions
 		WHERE event_date BETWEEN DATE '%s' AND DATE '%s'

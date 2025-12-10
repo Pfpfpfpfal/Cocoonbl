@@ -11,6 +11,10 @@
       background: #020617;
       color: #e5e7eb;
     }
+    .top-table-scroll {
+      max-height: 260px;
+      overflow-y: auto;
+    }
     .layout {
       padding: 16px;
       display: grid;
@@ -50,6 +54,15 @@
 </head>
 <body>
 <div class="layout">
+  <div class="card" style="grid-column: span 12; display:flex; gap:12px; align-items:center;">
+    <span style="font-size: 13px; color:#9ca3af;">Период:</span>
+    <input id="from-date" type="date" style="background:#020617;border:1px solid #1f2937;border-radius:8px;padding:4px 8px;color:#e5e7eb;">
+    <span>—</span>
+    <input id="to-date" type="date" style="background:#020617;border:1px solid #1f2937;border-radius:8px;padding:4px 8px;color:#e5e7eb;">
+    <button id="apply-range" style="margin-left:8px;padding:4px 12px;border-radius:8px;border:none;background:#2563eb;color:white;cursor:pointer;">
+      Применить
+    </button>
+  </div>
   <div class="card kpi">
     <div class="kpi-title">Всего транзакций</div>
     <div id="kpi-total" class="kpi-value">—</div>
@@ -74,23 +87,24 @@
 
   <div id="table-top" class="card">
     <div style="font-size: 14px; margin-bottom: 8px;">Топ подозрительных транзакций</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Дата</th>
-          <th>Txn</th>
-          <th>Клиент</th>
-          <th>Сумма</th>
-          <th>Страна</th>
-          <th>Канал</th>
-          <th>Скор</th>
-        </tr>
-      </thead>
-      <tbody id="top-body"></tbody>
-    </table>
+      <div class="top-table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Дата</th>
+              <th>Txn</th>
+              <th>Клиент</th>
+              <th>Сумма</th>
+              <th>Страна</th>
+              <th>Канал</th>
+              <th>Скор</th>
+            </tr>
+          </thead>
+          <tbody id="top-body"></tbody>
+        </table>
+      </div>
   </div>
 </div>
-
 <script>
 async function fetchJSON(url) {
   const res = await fetch(url);
@@ -98,8 +112,8 @@ async function fetchJSON(url) {
   return await res.json();
 }
 
-async function initDashboard() {
-  const summary = await fetchJSON('/api/summary');
+async function initDashboard(from, to) {
+  const summary = await fetchJSON(`/api/summary?from=${from}&to=${to}`);
   const total = summary.total_tx;
   const flagged = summary.flagged_tx;
   const rate = total ? (flagged * 100 / total).toFixed(2) + '%' : '0%';
@@ -109,7 +123,7 @@ async function initDashboard() {
   document.getElementById('kpi-rate').textContent = rate;
   document.getElementById('kpi-avg').textContent = summary.avg_score.toFixed(3);
 
-  const tsData = await fetchJSON('/api/timeseries');
+  const tsData = await fetchJSON(`/api/timeseries?from=${from}&to=${to}`);
   const tsChart = echarts.init(document.getElementById('chart-timeseries'));
   tsChart.setOption({
     backgroundColor: 'transparent',
@@ -122,7 +136,8 @@ async function initDashboard() {
       axisLine: { lineStyle: { color: '#64748b' } }
     },
     yAxis: {
-      type: 'value',axisLine: { lineStyle: { color: '#64748b' } },
+      type: 'value',
+      axisLine: { lineStyle: { color: '#64748b' } },
       splitLine: { lineStyle: { color: '#1f2937' } }
     },
     series: [
@@ -131,7 +146,7 @@ async function initDashboard() {
     ]
   });
 
-  const hist = await fetchJSON('/api/score-histogram');
+  const hist = await fetchJSON(`/api/score-histogram?from=${from}&to=${to}`);
   const histChart = echarts.init(document.getElementById('chart-score-hist'));
   histChart.setOption({
     backgroundColor: 'transparent',
@@ -150,7 +165,7 @@ async function initDashboard() {
     series: [{ type: 'bar', data: hist.map(d => d.cnt) }]
   });
 
-  const byChannel = await fetchJSON('/api/by-channel');
+  const byChannel = await fetchJSON(`/api/by-channel?from=${from}&to=${to}`);
   const chanChart = echarts.init(document.getElementById('chart-by-channel'));
   chanChart.setOption({
     backgroundColor: 'transparent',
@@ -173,24 +188,38 @@ async function initDashboard() {
     ]
   });
 
-  const top = await fetchJSON('/api/top-transactions');
+  const top = await fetchJSON(`/api/top-transactions?from=${from}&to=${to}`);
   const tbody = document.getElementById('top-body');
-  tbody.innerHTML = top.map(row => 
-    '<tr>' +
-      '<td>' + row.event_date +'</td>' +
-      '<td>' + row.transaction_id +'</td>' +
-      '<td>' + row.customer_id +'</td>' +
-      '<td>' + row.amount.toFixed(2) +'</td>' +
-      '<td>' + row.country || '' +'</td>' +
-      '<td>' + row.channel || '' +'</td>' +
-      '<td>' + row.fraud_score.toFixed(3) +'</td>' +
-    '</tr>'
-  ).join('');
+  tbody.innerHTML = top.map(row => `
+    <tr>
+      <td>${row.event_date}</td>
+      <td>${row.transaction_id}</td>
+      <td>${row.customer_id}</td>
+      <td>${(row.amount ?? 0).toFixed(2)}</td>
+      <td>${row.country || ''}</td>
+      <td>${row.channel || ''}</td>
+      <td>${row.fraud_score.toFixed(3)}</td>
+    </tr>
+  `).join('');
 }
 
-initDashboard().catch(err => {
-  console.error(err);
-});
+async function init() {
+  const range = await fetchJSON('/api/date-range');
+  const fromInput = document.getElementById('from-date');
+  const toInput = document.getElementById('to-date');
+
+  fromInput.value = range.from;
+  toInput.value = range.to;
+  document.getElementById('apply-range').onclick = () => {
+    const from = fromInput.value;
+    const to = toInput.value;
+    initDashboard(from, to).catch(console.error);
+  };
+
+  await initDashboard(range.from, range.to);
+}
+
+init().catch(console.error);
 </script>
 </body>
 </html>
