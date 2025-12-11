@@ -32,3 +32,11 @@ docker compose -f spark.yml up -d
 ```bash
 docker compose -f trino.yml up -d
 ```
+### Python lib
+```bash
+py -3.11 -m venv gnn-env
+```
+
+```bash
+gnn-env\Scripts\activate
+```
