@@ -8,7 +8,7 @@ from torch_geometric.nn import HeteroConv, SAGEConv
 from sklearn.model_selection import train_test_split
 
 BASE_DIR = Path("../notebooks/ml_dataset/gnn_edge")
-OUTPUT_DIR = Path("../model/ml/gnn_train/outputs")
+OUTPUT_DIR = Path("../model/ml/gnn_train")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def read_parquet_dir(path: Path) -> pd.DataFrame:
