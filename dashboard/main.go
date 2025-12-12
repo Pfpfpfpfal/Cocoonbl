@@ -48,6 +48,15 @@ type TopTxnRow struct {
 	FraudScore float64 `json:"fraud_score"`
 }
 
+type FraudTxnRow struct {
+	EventDate     string  `json:"event_date"`
+	TransactionID string  `json:"transaction_id"`
+	CustomerID    string  `json:"customer_id"`
+	Amount        float64 `json:"amount"`
+	Channel       string  `json:"channel"`
+	FraudScore    float64 `json:"fraud_score"`
+}
+
 var (
     db *sql.DB
     defaultFrom string
@@ -331,6 +340,151 @@ func main() {
 			result = append(result, rrow)
 		}
 		c.JSON(http.StatusOK, result)
+	})
+
+	r.GET("/api/fraud-txns", func(c *gin.Context) {
+		from, to := getDateRange(c)
+		limitStr := c.DefaultQuery("limit", "500")
+		limit, _ := strconv.Atoi(limitStr)
+		if limit <= 0 { limit = 500 }
+		if limit > 5000 { limit = 5000 }
+
+		ctx := c.Request.Context()
+		query := fmt.Sprintf(`
+		SELECT
+			CAST(event_date AS VARCHAR) AS event_date,
+			CAST(transaction_id AS VARCHAR) AS transaction_id,
+			COALESCE(customer_id,'') AS customer_id,
+			COALESCE(amount, 0.0) AS amount,
+			COALESCE(channel, 'UNKNOWN') AS channel,
+			COALESCE(fraud_score, 0.0) AS fraud_score
+		FROM iceberg.marts.scored_transactions
+		WHERE event_date BETWEEN DATE '%s' AND DATE '%s'
+		  AND fraud_label = 1
+		ORDER BY fraud_score DESC
+		LIMIT %d`, from, to, limit)
+
+		rows, err := db.QueryContext(ctx, query)
+		if err != nil {
+			log.Println("fraud-txns query error:", err)
+			c.JSON(500, gin.H{"error": "fraud-txns query failed"})
+			return
+		}
+		defer rows.Close()
+
+		var out []FraudTxnRow
+		for rows.Next() {
+			var r FraudTxnRow
+			if err := rows.Scan(&r.EventDate, &r.TransactionID, &r.CustomerID, &r.Amount, &r.Channel, &r.FraudScore); err != nil {
+				continue
+			}
+			out = append(out, r)
+		}
+		c.JSON(200, out)
+	})
+
+	r.GET("/api/fraud-links-txn", func(c *gin.Context) {
+		from, to := getDateRange(c)
+		txnID := c.Query("txn_id")
+		if txnID == "" {
+			c.JSON(400, gin.H{"error": "txn_id is required"})
+			return
+		}
+		if _, err := strconv.Atoi(txnID); err != nil {
+			c.JSON(400, gin.H{"error": "bad txn_id"})
+			return
+		}
+
+		if _, err := time.Parse("2006-01-02", from); err != nil {
+			c.JSON(400, gin.H{"error":"bad from"})
+			return
+		}
+		if _, err := time.Parse("2006-01-02", to); err != nil {
+			c.JSON(400, gin.H{"error":"bad to"})
+			return
+		}
+
+		query := fmt.Sprintf(`
+		SELECT
+		CAST(transaction_id AS varchar) AS transaction_id,
+		COALESCE(customer_id,'') AS customer_id,
+		COALESCE(card_id,'') AS card_id,
+		COALESCE(device_id,'') AS device_id,
+		COALESCE(email,'') AS email,
+		COALESCE(country,'') AS country,
+		COALESCE(region,'') AS region,
+		COALESCE(channel,'') AS channel,
+		COALESCE(fraud_score, 0.0) AS fraud_score,
+		COALESCE(fraud_label, 0) AS fraud_label
+		FROM iceberg.marts.scored_transactions
+		WHERE event_date BETWEEN DATE '%s' AND DATE '%s'
+		AND CAST(transaction_id AS varchar) = '%s'
+		LIMIT 1
+		`, from, to, txnID)
+
+		row := db.QueryRowContext(c.Request.Context(), query)
+
+		var tID, cust, card, dev, mail, country, region, channel string
+		var score float64
+		var label int64
+		if err := row.Scan(&tID, &cust, &card, &dev, &mail, &country, &region, &channel, &score, &label); err != nil {
+			c.JSON(404, gin.H{"error":"transaction not found"})
+			return
+		}
+
+		nodes := []GraphNode{}
+		edges := []GraphEdge{}
+
+		addNode := func(id, cat string, value float64) {
+			if id == "" { return }
+			nodes = append(nodes, GraphNode{ID: id, Cat: cat, Value: value})
+		}
+		addEdge := func(src, dst string) {
+			if src == "" || dst == "" { return }
+			edges = append(edges, GraphEdge{Source: src, Target: dst})
+		}
+
+		txn := "txn:" + tID
+		addNode(txn, "txn", score)
+
+		if cust != "" {
+			n := "cust:" + cust
+			addNode(n, "customer", 1)
+			addEdge(txn, n)
+		}
+		if card != "" {
+			n := "card:" + card
+			addNode(n, "card", 1)
+			addEdge(txn, n)
+		}
+		if dev != "" {
+			n := "dev:" + dev
+			addNode(n, "device", 1)
+			addEdge(txn, n)
+		}
+		if mail != "" {
+			n := "mail:" + mail
+			addNode(n, "email", 1)
+			addEdge(txn, n)
+		}
+
+		if country != "" {
+			n := "country:" + country
+			addNode(n, "country", 1)
+			addEdge(txn, n)
+		}
+		if region != "" {
+			n := "region:" + region
+			addNode(n, "region", 1)
+			addEdge(txn, n)
+		}
+		if channel != "" {
+			n := "channel:" + channel
+			addNode(n, "channel", 1)
+			addEdge(txn, n)
+		}
+
+		c.JSON(200, GraphResp{Nodes: nodes, Edges: edges})
 	})
 
 	r.GET("/api/fraud-cloud-3d", func(c *gin.Context) {
