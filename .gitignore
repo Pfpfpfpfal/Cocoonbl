@@ -1,3 +1,4 @@
 /data/*.csv
 /notebooks/.ipynb_checkpoints
 /notebooks/.Trash-0
+/gnn-env

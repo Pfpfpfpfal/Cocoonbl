@@ -51,6 +51,52 @@
       border-bottom: 1px solid #1f2937;
     }
     th { text-align: left; color: #9ca3af; }
+
+    .txn-panel {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 12px;
+      height: 520px;
+    }
+    .txn-list {
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .txn-list-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid #1f2937;
+      color: #9ca3af;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .txn-items {
+      overflow: auto;
+      flex: 1;
+    }
+    .txn-item {
+      padding: 10px 12px;
+      border-bottom: 1px solid #0b1220;
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+    }
+    .txn-item:hover { background: rgba(37,99,235,0.12); }
+    .txn-item.active { background: rgba(37,99,235,0.22); }
+    .txn-item .sub {
+      color: #94a3b8;
+      font-size: 11px;
+      margin-top: 2px;
+    }
+    .txn-item .score {
+      font-variant-numeric: tabular-nums;
+      color: #e5e7eb;
+    }
   </style>
 </head>
 <body>
@@ -86,7 +132,22 @@
   <div id="chart-timeseries" class="card"></div>
   <div id="chart-score-hist" class="card"></div>
   <div id="chart-by-channel" class="card"></div>
-  <div id="chart-by-country" class="card"></div>
+
+  <div class="card" style="grid-column: span 12; padding: 12px 12px 12px 12px;">
+    <div style="font-size: 14px; margin-bottom: 8px;">Фродовая транзакция и её связи</div>
+    <div class="txn-panel">
+      <div class="txn-list">
+        <div class="txn-list-header">
+          <span>Фродовые транзакции (выбор)</span>
+          <button id="refresh-fraud-list" style="padding:4px 10px;border-radius:8px;border:1px solid #1f2937;background:#0b1220;color:#e5e7eb;cursor:pointer;">Обновить</button>
+        </div>
+        <div id="fraud-txn-items" class="txn-items"></div>
+      </div>
+      <div id="chart-txn-links" style="width:100%; height:100%;"></div>
+    </div>
+  </div>
+
+  <div id="chart-links" class="card" style="grid-column: span 12; height: 520px;"></div>
 
   <div id="table-top" class="card">
     <div style="font-size: 14px; margin-bottom: 8px;">Топ подозрительных транзакций</div>
@@ -113,6 +174,148 @@ async function fetchJSON(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error("HTTP " + res.status);
   return await res.json();
+}
+
+function buildGraphOption(graph) {
+  const categories = [
+    { name: 'txn' }, { name: 'customer' }, { name: 'card' }, { name: 'device' }, { name: 'email' }
+  ];
+  const catIndex = (cat) => {
+    if (cat === 'txn') return 0;
+    if (cat === 'customer') return 1;
+    if (cat === 'card') return 2;
+    if (cat === 'device') return 3;
+    if (cat === 'email') return 4;
+    return 0;
+  };
+
+  return {
+    backgroundColor: 'transparent',
+    tooltip: { formatter: (p) => p.dataType === 'node' ? p.data.name : '' },
+    legend: [{ data: categories.map(c => c.name), textStyle: { color: '#e5e7eb' } }],
+    series: [{
+      type: 'graph',
+      layout: 'force',
+      roam: true,
+      draggable: true,
+      categories,
+      force: { repulsion: 140, edgeLength: 55, gravity: 0.05 },
+      label: { show: false },
+      emphasis: { focus: 'adjacency' },
+      lineStyle: { opacity: 0.35, width: 1 },
+      data: graph.nodes.map(n => ({
+        name: n.id,
+        category: catIndex(n.cat),
+        symbolSize: n.cat === 'txn' ? (10 + Math.min(24, (n.value ?? 0) * 28)) : 12,
+        value: n.value
+      })),
+      links: graph.edges.map(e => ({ source: e.source, target: e.target }))
+    }]
+  };
+}
+
+async function loadFraudTxnList(from, to) {
+  const itemsEl = document.getElementById('fraud-txn-items');
+  itemsEl.innerHTML = '<div style="padding:10px 12px;color:#94a3b8;">Загрузка…</div>';
+
+  const rows = await fetchJSON(`/api/fraud-txns?from=${from}&to=${to}&limit=500`);
+  if (!rows.length) {
+    itemsEl.innerHTML = '<div style="padding:10px 12px;color:#94a3b8;">Нет фродовых транзакций в выбранном диапазоне</div>';
+    return null;
+  }
+
+  itemsEl.innerHTML = rows.map((r, idx) => {
+    const score = (r.fraud_score ?? 0).toFixed(3);
+    const amt = (r.amount ?? 0).toFixed(2);
+    return `
+      <div class="txn-item" data-txn="${r.transaction_id}" data-idx="${idx}">
+        <div>
+          <div><b>${r.transaction_id}</b></div>
+          <div class="sub">${r.event_date} · ${r.channel || 'UNKNOWN'} · ${amt}</div>
+        </div>
+        <div class="score">${score}</div>
+      </div>
+    `;
+  }).join('');
+
+  const nodes = itemsEl.querySelectorAll('.txn-item');
+  nodes.forEach(n => {
+    n.onclick = async () => {
+      nodes.forEach(x => x.classList.remove('active'));
+      n.classList.add('active');
+      const txnId = n.getAttribute('data-txn');
+      await renderTxnLinks(from, to, txnId);
+    };
+  });
+
+  nodes[0].classList.add('active');
+  return rows[0].transaction_id;
+}
+
+async function renderTxnLinks(from, to, txnId) {
+  const el = document.getElementById('chart-txn-links');
+  const chart = echarts.init(el);
+  chart.showLoading('default', { text: 'Загрузка связей…', textColor: '#e5e7eb', maskColor: 'rgba(2,6,23,0.35)'});
+  try {
+    const graph = await fetchJSON(`/api/fraud-links-txn?from=${from}&to=${to}&txn_id=${txnId}&neighbors=600`);
+    chart.hideLoading();
+    chart.setOption(buildGraphOption(graph), true);
+  } catch (e) {
+    chart.hideLoading();
+    chart.clear();
+  }
+}
+
+async function renderLinks(from, to) {
+  const graph = await fetchJSON(`/api/fraud-links?from=${from}&to=${to}&limit=250`);
+  const el = document.getElementById('chart-links');
+  const chart = echarts.init(el);
+
+  const categories = [
+    { name: 'txn' }, { name: 'customer' }, { name: 'card' }, { name: 'device' }, { name: 'email' }
+  ];
+  const catIndex = (cat) => {
+    if (cat === 'txn') return 0;
+    if (cat === 'customer') return 1;
+    if (cat === 'card') return 2;
+    if (cat === 'device') return 3;
+    if (cat === 'email') return 4;
+    return 0;
+  };
+
+  chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { formatter: (p) => p.dataType === 'node' ? p.data.name : '' },
+    legend: [{ data: categories.map(c => c.name), textStyle: { color: '#e5e7eb' } }],
+    series: [{
+      type: 'graph',
+      layout: 'force',
+      roam: true,
+      draggable: true,
+      categories,
+      force: {
+        repulsion: 120,
+        edgeLength: 50,
+        gravity: 0.05
+      },
+      label: { show: false },
+      emphasis: { focus: 'adjacency' },
+      lineStyle: { opacity: 0.35, width: 1 },
+      data: graph.nodes.map(n => ({
+        name: n.id,
+        category: catIndex(n.cat),
+        symbolSize: n.cat === 'txn' ? (8 + Math.min(20, n.value * 25)) : 10,
+        value: n.value
+      })),
+      links: graph.edges.map(e => ({ source: e.source, target: e.target }))
+    }]
+  });
+
+  chart.off('click');
+  chart.on('click', params => {
+    if (params.dataType !== 'node') return;
+    chart.dispatchAction({ type: 'focusNodeAdjacency', seriesIndex: 0, dataIndex: params.dataIndex });
+  });
 }
 
 async function renderFraud3D(from, to) {
@@ -307,6 +510,15 @@ async function initDashboard(from, to) {
     </tr>
   `).join('');
 
+  const firstTxn = await loadFraudTxnList(from, to);
+  const refreshBtn = document.getElementById('refresh-fraud-list');
+  refreshBtn.onclick = async () => {
+    const first = await loadFraudTxnList(from, to);
+    if (first) await renderTxnLinks(from, to, first);
+  };
+  if (firstTxn) await renderTxnLinks(from, to, firstTxn);
+
+  await renderLinks(from, to);
   await renderFraud3Dc(from, to);
   await renderFraud3D(from, to);
 }
