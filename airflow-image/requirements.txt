@@ -1,0 +1,8 @@
+pandas
+requests
+psycopg2-binary
+apache-airflow
+apache-airflow-providers-trino
+apache-airflow-providers-standard
+apache-airflow-providers-postgres
+pyspark
