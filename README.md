@@ -40,3 +40,31 @@ py -3.11 -m venv gnn-env
 ```bash
 gnn-env\Scripts\activate
 ```
+
+Запуск сервисов
+
+Права для файла
+
+
+chmod +x docker/airflow/airflow-init.sh
+
+Запуск Postgres
+
+
+docker compose up -d postgres-meta postgres-data
+
+Инициализация пользователя и подключения
+
+
+docker compose up airflow-init
+
+
+Процесс должен завершиться с кодом 0, иначе ошибка.
+
+Запуск сервиса AirFlow
+
+
+docker compose up -d webserver scheduler
+
+
+Доступ к web-сервису: http://localhost:8083
