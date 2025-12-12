@@ -1,0 +1,107 @@
+version: "3.9"
+
+services:
+    # БД для метаданных Airflow
+  airflow-db:
+    image: postgres:16
+    container_name: airflow-db
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    volumes:
+      - airflow_db_data:/var/lib/postgresql/data
+    networks:
+      - coc-net
+
+  airflow-init:
+    image: bestairflowimage:latest
+    container_name: airflow-init
+    user: "${AIRFLOW_UID:-50000}:0"
+    depends_on:
+      - airflow-db
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: "8f3b1a4c9b2ed5f4e6a7c8d9f00123456789abcd0123456789abcdef01234567"
+      # коннект к сырому postgres как Airflow Connection "pg_raw"
+      AIRFLOW_CONN_PG_RAW: postgresql+psycopg2://admin:admin@postgres-raw:5432/raw_layer
+
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+      - ../spark-jobs:/opt/spark-jobs
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "Initializing Airflow DB..."
+        airflow db init
+        airflow users create \
+          --username admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com \
+          --password admin
+        echo "Airflow init done."
+    restart: "no"
+    networks:
+      - coc-net
+
+  airflow-webserver:
+    image: bestairflowimage:latest
+    container_name: airflow-webserver
+    depends_on:
+      - airflow-init
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: "8f3b1a4c9b2ed5f4e6a7c8d9f00123456789abcd0123456789abcdef01234567"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+
+
+      AIRFLOW_CONN_PG_RAW: postgresql+psycopg2://admin:admin@postgres-raw:5432/raw_layer
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+      - ../spark-jobs:/opt/spark-jobs
+      - ../data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:8080"
+    command: webserver
+    networks:
+      - coc-net
+
+  airflow-scheduler:
+    image: bestairflowimage:latest
+    container_name: airflow-scheduler
+    depends_on:
+      - airflow-init
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: "8f3b1a4c9b2ed5f4e6a7c8d9f00123456789abcd0123456789abcdef01234567"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+
+
+      AIRFLOW_CONN_PG_RAW: postgresql+psycopg2://admin:admin@postgres-raw:5432/raw_layer
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+      - ../spark-jobs:/opt/spark-jobs
+      - ../data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: scheduler
+    networks:
+      - coc-net
+
+volumes:
+  raw_pg_data:
+  airflow_db_data:
+
+networks:
+  coc-net:
+    external: true
