@@ -86,7 +86,7 @@
   <div id="chart-timeseries" class="card"></div>
   <div id="chart-score-hist" class="card"></div>
   <div id="chart-by-channel" class="card"></div>
-  <div id="chart-by-country" class="card"></div>
+  <div id="chart-links" class="card" style="grid-column: span 12; height: 520px;"></div>
 
   <div id="table-top" class="card">
     <div style="font-size: 14px; margin-bottom: 8px;">Топ подозрительных транзакций</div>
@@ -113,6 +113,58 @@ async function fetchJSON(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error("HTTP " + res.status);
   return await res.json();
+}
+
+async function renderLinks(from, to) {
+  const graph = await fetchJSON(`/api/fraud-links?from=${from}&to=${to}&limit=250`);
+  const el = document.getElementById('chart-links');
+  const chart = echarts.init(el);
+
+  const categories = [
+    { name: 'txn' }, { name: 'customer' }, { name: 'card' }, { name: 'device' }, { name: 'email' }
+  ];
+  const catIndex = (cat) => {
+    if (cat === 'txn') return 0;
+    if (cat === 'customer') return 1;
+    if (cat === 'card') return 2;
+    if (cat === 'device') return 3;
+    if (cat === 'email') return 4;
+    return 0;
+  };
+
+  chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { formatter: (p) => p.dataType === 'node' ? p.data.name : '' },
+    legend: [{ data: categories.map(c => c.name), textStyle: { color: '#e5e7eb' } }],
+    series: [{
+      type: 'graph',
+      layout: 'force',
+      roam: true,
+      draggable: true,
+      categories,
+      force: {
+        repulsion: 120,
+        edgeLength: 50,
+        gravity: 0.05
+      },
+      label: { show: false },
+      emphasis: { focus: 'adjacency' },
+      lineStyle: { opacity: 0.35, width: 1 },
+      data: graph.nodes.map(n => ({
+        name: n.id,
+        category: catIndex(n.cat),
+        symbolSize: n.cat === 'txn' ? (8 + Math.min(20, n.value * 25)) : 10,
+        value: n.value
+      })),
+      links: graph.edges.map(e => ({ source: e.source, target: e.target }))
+    }]
+  });
+
+  chart.off('click');
+  chart.on('click', params => {
+    if (params.dataType !== 'node') return;
+    chart.dispatchAction({ type: 'focusNodeAdjacency', seriesIndex: 0, dataIndex: params.dataIndex });
+  });
 }
 
 async function renderFraud3D(from, to) {
@@ -307,6 +359,7 @@ async function initDashboard(from, to) {
     </tr>
   `).join('');
 
+  await renderLinks(from, to);
   await renderFraud3Dc(from, to);
   await renderFraud3D(from, to);
 }

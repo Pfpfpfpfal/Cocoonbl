@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 	"fmt"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/trinodb/trino-go-client/trino"
@@ -68,6 +69,20 @@ type FraudPoint struct {
     Z float64 `json:"z"`
     Score float64 `json:"score"`
     Label int `json:"label"`
+}
+
+type GraphNode struct {
+  ID    string  `json:"id"`
+  Cat   string  `json:"cat"`
+  Value float64 `json:"value"`
+}
+type GraphEdge struct {
+  Source string `json:"source"`
+  Target string `json:"target"`
+}
+type GraphResp struct {
+  Nodes []GraphNode `json:"nodes"`
+  Edges []GraphEdge `json:"edges"`
 }
 
 func initTrinoAndDateRange() *sql.DB {
@@ -396,6 +411,91 @@ func main() {
 
 		c.JSON(200, pts)
 	})
+
+	r.GET("/api/fraud-links", func(c *gin.Context) {
+		from, to := getDateRange(c)
+		limitStr := c.DefaultQuery("limit", "200")
+		limit, _ := strconv.Atoi(limitStr)
+		if limit <= 0 || limit > 1000 { limit = 200 }
+
+		ctx := c.Request.Context()
+
+		query := fmt.Sprintf(`
+		WITH top_tx AS (
+		SELECT
+			CAST(transaction_id AS varchar) AS transaction_id,
+			COALESCE(customer_id,'') AS customer_id,
+			COALESCE(card_id,'') AS card_id,
+			COALESCE(device_id,'') AS device_id,
+			COALESCE(email,'') AS email,
+			COALESCE(fraud_score, 0.0) AS fraud_score
+		FROM iceberg.marts.scored_transactions
+		WHERE event_date BETWEEN DATE '%s' AND DATE '%s'
+		ORDER BY fraud_score DESC
+		LIMIT %d
+		)
+		SELECT transaction_id, customer_id, card_id, device_id, email, fraud_score
+		FROM top_tx
+		`, from, to, limit)
+
+		rows, err := db.QueryContext(ctx, query)
+		if err != nil {
+			log.Println("fraud-links query error:", err)
+			c.JSON(500, gin.H{"error": "fraud-links query failed"})
+			return
+		}
+		defer rows.Close()
+
+		nodes := make(map[string]GraphNode)
+		edges := make([]GraphEdge, 0, limit*4)
+
+		addNode := func(id, cat string, value float64) {
+			if id == "" { return }
+			if _, ok := nodes[id]; ok { return }
+			nodes[id] = GraphNode{ID: id, Cat: cat, Value: value}
+		}
+		addEdge := func(src, dst string) {
+			if src == "" || dst == "" { return }
+			edges = append(edges, GraphEdge{Source: src, Target: dst})
+		}
+
+		for rows.Next() {
+			var txnID, custID, cardID, devID, email string
+			var score float64
+			if err := rows.Scan(&txnID, &custID, &cardID, &devID, &email, &score); err != nil {
+			continue
+			}
+
+			txn := "txn:" + txnID
+			addNode(txn, "txn", score)
+
+			if custID != "" {
+			cust := "cust:" + custID
+			addNode(cust, "customer", 1)
+			addEdge(txn, cust)
+			}
+			if cardID != "" {
+			card := "card:" + cardID
+			addNode(card, "card", 1)
+			addEdge(txn, card)
+			}
+			if devID != "" {
+			dev := "dev:" + devID
+			addNode(dev, "device", 1)
+			addEdge(txn, dev)
+			}
+			if email != "" {
+			mail := "mail:" + email
+			addNode(mail, "email", 1)
+			addEdge(txn, mail)
+			}
+		}
+
+		outNodes := make([]GraphNode, 0, len(nodes))
+		for _, n := range nodes { outNodes = append(outNodes, n) }
+
+		c.JSON(http.StatusOK, GraphResp{Nodes: outNodes, Edges: edges})
+		})
 
 	log.Println("Dashboard listening on :8080")
 	if err := r.Run(":8080"); err != nil {
