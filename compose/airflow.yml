@@ -2,6 +2,10 @@ services:
   postgres-meta:
     image: postgres:15
     env_file: .env
+    hostname: postgres-meta
+    networks:
+      coc-net:
+    container_name: postgres-meta
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -12,11 +16,7 @@ services:
       - pgmeta:/var/lib/postgresql/data
 
   airflow-init:
-    build:
-      context: ../airflow-image
-      args:
-        AIRFLOW_VERSION: ${AIRFLOW_VERSION}
-    image: airflow_dev:2.9.3
+    image: airflow_dev:2.9.5
     env_file: .env
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -34,19 +34,19 @@ services:
       - ../airflow-image/airflow/airflow_variables.json:/opt/airflow/airflow_variables.json:ro
       - ../airflow-image/airflow/airflow_connections.json:/opt/airflow/airflow_connections.json:ro
       - ../airflow-image/airflow/airflow-init.sh:/opt/airflow/airflow-init.sh:ro
+      - ../data-exchange:/data
     depends_on:
       - postgres-meta
+    networks:
+      coc-net:
     entrypoint: ["/bin/bash", "/opt/airflow/airflow-init.sh"]
     command: []
     restart: "no"
 
   webserver:
+    image: airflow_dev:2.9.5
     hostname: webserver
-    build:
-      context: ../airflow-image
-      args:
-        AIRFLOW_VERSION: ${AIRFLOW_VERSION}
-    image: ${AIRFLOW_IMAGE_NAME}:${AIRFLOW_VERSION}
+    container_name: webserver
     env_file: .env
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -61,9 +61,12 @@ services:
         tmpfs:
           size: 67108864
       - ../plugins:/opt/airflow/plugins
+      - ../data-exchange:/data
     depends_on:
       - postgres-meta
     command: webserver
+    networks:
+      coc-net:
     ports:
       - "8083:8080"
     healthcheck:
@@ -74,13 +77,12 @@ services:
       start_period: 20s
 
   scheduler:
-    build:
-      context: ../airflow-image
-      args:
-        AIRFLOW_VERSION: ${AIRFLOW_VERSION}
     hostname: scheduler
-    image: ${AIRFLOW_IMAGE_NAME}:${AIRFLOW_VERSION}
+    container_name: scheduler
+    image: airflow_dev:2.9.5
     env_file: .env
+    networks:
+      coc-net:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
@@ -94,6 +96,7 @@ services:
         tmpfs:
           size: 67108864
       - ../plugins:/opt/airflow/plugins
+      - ../data-exchange:/data
     depends_on:
       - postgres-meta
     command: scheduler
@@ -106,3 +109,7 @@ services:
 
 volumes:
   pgmeta:
+
+networks:
+  coc-net:
+    external: true

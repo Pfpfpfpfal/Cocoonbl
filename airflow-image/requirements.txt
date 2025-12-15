@@ -5,4 +5,5 @@ apache-airflow
 apache-airflow-providers-trino
 apache-airflow-providers-standard
 apache-airflow-providers-postgres
-pyspark
+pyspark==3.5.1
+apache-airflow-providers-apache-spark

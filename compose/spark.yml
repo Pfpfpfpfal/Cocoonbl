@@ -9,6 +9,7 @@ services:
       - ../spark-conf:/opt/spark/conf
       - ../data:/data
       - ../model/ml:/models
+      - ../data-exchange:/data
     ports:
       - "4040:4040"
       - "8888:8888"

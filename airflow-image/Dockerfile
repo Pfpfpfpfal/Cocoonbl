@@ -5,7 +5,11 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential git curl \
     libpq-dev \
+    openjdk-17-jre-headless \
  && rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH=$JAVA_HOME/bin:$PATH
 
 USER airflow
 COPY --chown=airflow:root requirements.txt /requirements.txt
