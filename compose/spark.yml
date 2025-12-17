@@ -3,27 +3,33 @@ services:
     image: spark:3.1
     container_name: spark
     networks:
-      coc-net:
+      - coc-net
+
     volumes:
-      - ../notebooks:/workspace
       - ../spark-conf:/opt/spark/conf
       - ../data:/data
       - ../model/ml:/models
-      - ../data-exchange:/data
+      - ../data-exchange:/data-exchange
+      - ../dags/jobs:/workspace/jobs
+      - ../dags:/opt/airflow/dags
+
     ports:
-      - "4040:4040"
-      - "8888:8888"
+      - "7077:7077"   # Spark master RPC
+      - "8080:8080"   # Spark master UI
+      - "4040:4040"   # Spark app UI (driver)
+
     environment:
       AWS_REGION: us-east-1
       AWS_DEFAULT_REGION: us-east-1
       AWS_ACCESS_KEY_ID: admin
       AWS_SECRET_ACCESS_KEY: password
+
     command: >
-      jupyter lab
-       --ip=0.0.0.0
-       --port=8888
-       --no-browser
-       --allow-root
+      bash -lc "
+        /opt/spark/sbin/start-master.sh --host spark --port 7077 &&
+        /opt/spark/sbin/start-worker.sh spark://spark:7077 &&
+        tail -f /opt/spark/logs/*
+      "
 
 networks:
   coc-net:

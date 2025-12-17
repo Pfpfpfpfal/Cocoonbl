@@ -55,13 +55,17 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-meta:5432/${POSTGRES_DB}
       AIRFLOW_UID: ${AIRFLOW_UID}
     volumes:
-      - ../dags:/opt/airflow/dags
       - type: tmpfs
         target: /opt/airflow/logs
         tmpfs:
           size: 67108864
       - ../plugins:/opt/airflow/plugins
       - ../data-exchange:/data
+      - ../data:/data
+      - ../jars:/opt/spark/jars
+      - ../dags:/opt/airflow/dags
+      - ../dags/jobs:/workspace/jobs
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - postgres-meta
     command: webserver
@@ -90,13 +94,17 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-meta:5432/${POSTGRES_DB}
       AIRFLOW_UID: ${AIRFLOW_UID}
     volumes:
-      - ../dags:/opt/airflow/dags
       - type: tmpfs
         target: /opt/airflow/logs
         tmpfs:
           size: 67108864
       - ../plugins:/opt/airflow/plugins
       - ../data-exchange:/data
+      - ../data:/data
+      - ../jars:/opt/spark/jars
+      - ../dags:/opt/airflow/dags
+      - ../dags/jobs:/workspace/jobs
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - postgres-meta
     command: scheduler
