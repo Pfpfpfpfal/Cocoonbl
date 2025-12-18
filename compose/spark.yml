@@ -1,6 +1,6 @@
 services:
   spark:
-    image: spark:3.1
+    image: spark:3.2
     container_name: spark
     networks:
       coc-net:
