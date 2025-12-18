@@ -51,7 +51,7 @@ chmod +x docker/airflow/airflow-init.sh
 Запуск Postgres
 
 
-docker compose up -d postgres-meta postgres-data
+docker compose up -d postgres-meta
 
 Инициализация пользователя и подключения
 
