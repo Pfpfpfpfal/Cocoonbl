@@ -5,11 +5,54 @@ from sklearn.metrics import roc_auc_score
 from lightgbm import LGBMClassifier
 import joblib
 import numpy as np
+import s3fs
 
-train_path = "../notebooks/ml_dataset/dataset_train"
+S3_ENDPOINT = "http://localhost:9000"
+S3_ACCESS_KEY = "admin"
+S3_SECRET_KEY = "password"
 
-print(f"Loading train data from: {train_path}")
-df = pd.read_parquet(train_path, engine="pyarrow")
+BUCKET = "warehouse"
+PREFIX = "features.db/lgbm_data/train"
+
+def make_fs():
+    return s3fs.S3FileSystem(
+        key=S3_ACCESS_KEY,
+        secret=S3_SECRET_KEY,
+        client_kwargs={"endpoint_url": S3_ENDPOINT},
+    )
+
+fs = make_fs()
+
+df = pd.read_parquet(
+    f"{BUCKET}/{PREFIX}",
+    engine="pyarrow",
+    filesystem=fs
+)
+
+print(f"Loading train data from")
+
+def read_parquet_s3(bucket: str, prefix: str) -> pd.DataFrame:
+    fs = make_fs()
+
+    path = f"{bucket}/{prefix}".rstrip("/")
+
+    try:
+        items = fs.ls(path)
+        print(f"S3 ls OK: s3://{path} -> {len(items)} objects")
+        if not items:
+            raise FileNotFoundError(f"No objects under s3://{path}")
+    except Exception as e:
+        raise RuntimeError(f"Cannot access s3://{path}: {e}")
+
+    return pd.read_parquet(
+        path,
+        engine="pyarrow",
+        filesystem=fs
+    )
+
+
+df = read_parquet_s3(bucket="warehouse", prefix="features.db/lgbm_data/train")
+
 print("Shape:", df.shape)
 print("Columns:", df.columns.tolist())
 print(df.dtypes)
@@ -63,19 +106,20 @@ y_pred_prob = model.predict_proba(X_valid)[:, 1]
 auc = roc_auc_score(y_valid, y_pred_prob)
 print(f"AUC on validation: {auc:.4f}")
 
+
 def eval_topk_and_lift(y_true, y_score, top_k_list=(0.001, 0.005, 0.01, 0.02, 0.05), n_bins=10):
     y_true = np.asarray(y_true).astype(int)
     y_score = np.asarray(y_score).astype(float)
 
-    df = pd.DataFrame({"y": y_true, "score": y_score}).sort_values("score", ascending=False).reset_index(drop=True)
+    dfm = pd.DataFrame({"y": y_true, "score": y_score}).sort_values("score", ascending=False).reset_index(drop=True)
 
-    base_rate = df["y"].mean()
-    total_pos = df["y"].sum()
+    base_rate = dfm["y"].mean()
+    total_pos = dfm["y"].sum()
 
     rows = []
     for frac in top_k_list:
-        k = max(1, int(round(frac * len(df))))
-        top = df.iloc[:k]
+        k = max(1, int(round(frac * len(dfm))))
+        top = dfm.iloc[:k]
         tp = int(top["y"].sum())
         recall = tp / total_pos if total_pos > 0 else 0.0
         precision = tp / k
@@ -90,11 +134,11 @@ def eval_topk_and_lift(y_true, y_score, top_k_list=(0.001, 0.005, 0.01, 0.02, 0.
 
     topk_table = pd.DataFrame(rows)
 
-    df["bin"] = pd.qcut(df.index + 1, q=n_bins, labels=False)
+    dfm["bin"] = pd.qcut(dfm.index + 1, q=n_bins, labels=False)
     bin_stats = (
-        df.groupby("bin")
-          .agg(cnt=("y", "size"), pos=("y", "sum"), avg_score=("score", "mean"))
-          .reset_index()
+        dfm.groupby("bin")
+           .agg(cnt=("y", "size"), pos=("y", "sum"), avg_score=("score", "mean"))
+           .reset_index()
     )
     bin_stats["pos_rate"] = bin_stats["pos"] / bin_stats["cnt"]
     bin_stats["lift"] = bin_stats["pos_rate"] / base_rate if base_rate > 0 else np.nan
@@ -108,10 +152,9 @@ def eval_topk_and_lift(y_true, y_score, top_k_list=(0.001, 0.005, 0.01, 0.02, 0.
     bin_stats["cdf_pos"] = bin_stats["cum_pos"] / total_pos if total_pos > 0 else 0.0
     bin_stats["cdf_neg"] = bin_stats["cum_neg"] / total_neg if total_neg > 0 else 0.0
     bin_stats["ks"] = (bin_stats["cdf_pos"] - bin_stats["cdf_neg"]).abs()
-
     ks_value = float(bin_stats["ks"].max()) if len(bin_stats) else 0.0
-
     return topk_table, bin_stats, ks_value, base_rate
+
 
 topk_table, lift_table, ks_value, base_rate = eval_topk_and_lift(y_valid, y_pred_prob)
 
@@ -122,10 +165,9 @@ print("\nTop-K metrics:")
 print(topk_table.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
 print("\nLift/KS by decile (bin=0 is top scores):")
-print(lift_table[["bin","cnt","pos","pos_rate","lift","avg_score","ks"]].to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+print(lift_table[["bin", "cnt", "pos", "pos_rate", "lift", "avg_score", "ks"]].to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
 os.makedirs("./ml", exist_ok=True)
-
 bundle = {"model": model, "features": feature_cols}
 joblib.dump(bundle, "./ml/lgbm_fraud_gnn.pkl")
 print("Model saved to ./ml/lgbm_fraud_gnn.pkl")
