@@ -2,5 +2,6 @@
 /notebooks/.ipynb_checkpoints
 /notebooks/.Trash-0
 /gnn-env
+/lgbm-env
 /data-exchange/*.csv
 /spark-image/jars
