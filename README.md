@@ -32,13 +32,22 @@ docker compose -f spark.yml up -d
 ```bash
 docker compose -f trino.yml up -d
 ```
-### Python lib
+### Python lib gnn
 ```bash
 py -3.11 -m venv gnn-env
 ```
 
 ```bash
 gnn-env\Scripts\activate
+```
+
+### Python lib gnn
+```bash
+py -3.13 -m venv lgbm-env
+```
+
+```bash
+lgbm-env\Scripts\activate
 ```
 
 Запуск сервисов
