@@ -15,7 +15,7 @@ FILES = [
 
 S3_ENDPOINT = "http://minio:9000"
 BUCKET = "warehouse"
-PREFIX = "raw.db/csv/"
+PREFIX = "raw.db/"
 
 ACCESS_KEY = "admin"
 SECRET_KEY = "password"
