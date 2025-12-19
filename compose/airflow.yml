@@ -1,0 +1,115 @@
+services:
+  postgres-meta:
+    image: postgres:15
+    env_file: .env
+    hostname: postgres-meta
+    networks:
+      coc-net:
+    container_name: postgres-meta
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgmeta:/var/lib/postgresql/data
+
+  airflow-init:
+    image: airflow_dev:2.9.5
+    env_file: .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "True"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-meta:5432/${POSTGRES_DB}
+      AIRFLOW_UID: ${AIRFLOW_UID}
+    volumes:
+      - ../dags:/opt/airflow/dags
+      - type: tmpfs
+        target: /opt/airflow/logs
+        tmpfs:
+          size: 67108864 
+      - ../plugins:/opt/airflow/plugins
+      - ../airflow-image/airflow/airflow_variables.json:/opt/airflow/airflow_variables.json:ro
+      - ../airflow-image/airflow/airflow_connections.json:/opt/airflow/airflow_connections.json:ro
+      - ../airflow-image/airflow/airflow-init.sh:/opt/airflow/airflow-init.sh:ro
+      - ../data-exchange:/data
+    depends_on:
+      - postgres-meta
+    networks:
+      coc-net:
+    entrypoint: ["/bin/bash", "/opt/airflow/airflow-init.sh"]
+    command: []
+    restart: "no"
+
+  webserver:
+    image: airflow_dev:2.9.5
+    hostname: webserver
+    container_name: webserver
+    env_file: .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "True"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-meta:5432/${POSTGRES_DB}
+      AIRFLOW_UID: ${AIRFLOW_UID}
+    volumes:
+      - ../dags:/opt/airflow/dags
+      - type: tmpfs
+        target: /opt/airflow/logs
+        tmpfs:
+          size: 67108864
+      - ../plugins:/opt/airflow/plugins
+      - ../data-exchange:/data
+    depends_on:
+      - postgres-meta
+    command: webserver
+    networks:
+      coc-net:
+    ports:
+      - "8083:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  scheduler:
+    hostname: scheduler
+    container_name: scheduler
+    image: airflow_dev:2.9.5
+    env_file: .env
+    networks:
+      coc-net:
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "True"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-meta:5432/${POSTGRES_DB}
+      AIRFLOW_UID: ${AIRFLOW_UID}
+    volumes:
+      - ../dags:/opt/airflow/dags
+      - type: tmpfs
+        target: /opt/airflow/logs
+        tmpfs:
+          size: 67108864
+      - ../plugins:/opt/airflow/plugins
+      - ../data-exchange:/data
+    depends_on:
+      - postgres-meta
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $(hostname)"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  pgmeta:
+
+networks:
+  coc-net:
+    external: true
