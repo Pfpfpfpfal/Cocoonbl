@@ -6,3 +6,4 @@
 /data-exchange/*.csv
 /spark-image/jars
 /dags/__pycache__
+/dags/jobs/__pycache__
