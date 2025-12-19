@@ -30,6 +30,10 @@ docker compose -f airflow.yml up -d airflow-init
 ```bash
 docker compose -f airflow.yml up -d scheduler webserver
 ```
+#### Connections
+Задать connections airflow
+spark: `spark://spark-master:7077`
+gnn_service: `http://host.docker.internal:5055`
 ## Data server
 Поднять сервер для скачивания данных
 ```bash
@@ -58,6 +62,7 @@ go run main.go
 ```
 ## Python
 Библиотеки для обучения и запуска моделей моделей находятся в `requirements_modelname.txt`
+Лучше запускать через `Comand Prompt`
 ### Python lib gnn
 ```bash
 py -3.11 -m venv gnn-env
@@ -82,7 +87,16 @@ lgbm-env\Scripts\activate
 ```bash
 pip install -r requirements_lgbm.txt
 ```
-
 ## Описание Dag-ов
 **init_namespaces** - создание слоев `raw`, `cleaned`, `features`, `marts`, `graph` в S3
+
 **csv_to_raw** - кладет файлы csv в S3 в формате `parquet`
+
+### Запуск fastapi
+- GNN
+```bash
+set GNN_API_TOKEN=supersecret
+python -m uvicorn gnn_service:app --host 0.0.0.0 --port 5055
+```
+
+- LGBM
