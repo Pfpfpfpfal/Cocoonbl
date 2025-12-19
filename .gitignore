@@ -5,3 +5,4 @@
 /lgbm-env
 /data-exchange/*.csv
 /spark-image/jars
+/dags/__pycache__
