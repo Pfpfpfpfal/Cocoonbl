@@ -66,7 +66,7 @@ def build_clean(df_txn, df_id, dataset_label: str, has_target: bool):
 
 
 def main():
-    spark = SparkSession.builder.appName("raw_to_cleaned_ieee_cis").getOrCreate()
+    spark = SparkSession.builder.appName("raw_to_cleaned").getOrCreate()
 
     spark.conf.set("spark.sql.shuffle.partitions", "64")
     spark.conf.set("spark.sql.files.maxRecordsPerFile", "500000")
