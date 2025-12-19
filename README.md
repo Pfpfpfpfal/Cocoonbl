@@ -1,7 +1,46 @@
 # Cocoonbl
 ## Description
-В папке data хранятся csv(4 файла) (https://www.kaggle.com/code/pavan1512/ieee-cis-fraud-detection)
-## GO
+**Схема**
+
+В папке data хранятся csv(4 [файла](https://www.kaggle.com/code/pavan1512/ieee-cis-fraud-detection))
+## Cluster Run
+Запуск кластера Lakehouse + Spark + Trino + Airflow
+### Create Network
+```bash
+docker network create coc-net || true
+```
+### Lakehouse
+```bash
+docker compose -f lakehouse.yml up -d
+```
+### Spark
+```bash
+docker compose -f spark.yml up -d
+```
+### Trino
+```bash
+docker compose -f trino.yml up -d
+```
+### Airflow
+```bash
+docker compose -f airflow.yml up -d airflow-init
+```
+Работа контейнера должна завершиться с кодом `0`, иначе ошибка инициализации
+
+```bash
+docker compose -f airflow.yml up -d scheduler webserver
+```
+## Data server
+Поднять сервер для скачивания данных
+```bash
+cd data
+```
+
+```bash
+python -m http.server 8000
+```
+## Dashboard
+**Подготовка к запуску dashboard**
 ```bash
 go mod init antifraud-dashboard
 ```
@@ -13,25 +52,12 @@ go mod tidy
 ```bash
 go get github.com/trinodb/trino-go-client
 ```
-## Cluster Run
-### Create Network
+**Запуск dashboard**
 ```bash
-docker network create coc-net || true
+go run main.go
 ```
-### Lakehouse
-
-```bash
-docker compose -f lakehouse.yml up -d
-```
-### Spark
-
-```bash
-docker compose -f spark.yml up -d
-```
-### Trino
-```bash
-docker compose -f trino.yml up -d
-```
+## Python
+Библиотеки для обучения и запуска моделей моделей находятся в `requirements_modelname.txt`
 ### Python lib gnn
 ```bash
 py -3.11 -m venv gnn-env
@@ -41,7 +67,10 @@ py -3.11 -m venv gnn-env
 gnn-env\Scripts\activate
 ```
 
-### Python lib gnn
+```bash
+pip install -r requirements_gnn.txt
+```
+### Python lib lgbm
 ```bash
 py -3.13 -m venv lgbm-env
 ```
@@ -50,30 +79,10 @@ py -3.13 -m venv lgbm-env
 lgbm-env\Scripts\activate
 ```
 
-Запуск сервисов
+```bash
+pip install -r requirements_lgbm.txt
+```
 
-Права для файла
-
-
-chmod +x docker/airflow/airflow-init.sh
-
-Запуск Postgres
-
-
-docker compose up -d postgres-meta
-
-Инициализация пользователя и подключения
-
-
-docker compose up airflow-init
-
-
-Процесс должен завершиться с кодом 0, иначе ошибка.
-
-Запуск сервиса AirFlow
-
-
-docker compose up -d webserver scheduler
-
-
-Доступ к web-сервису: http://localhost:8083
+## Описание Dag-ов
+**init_namespaces** - создание слоев `raw`, `cleaned`, `features`, `marts`, `graph` в S3
+**csv_to_raw** - кладет файлы csv в S3 в формате `parquet`
