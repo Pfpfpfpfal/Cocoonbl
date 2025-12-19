@@ -44,7 +44,9 @@ with DAG(
         "spark.jars.packages": ",".join([
             "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.10.0",
             "org.apache.iceberg:iceberg-aws-bundle:1.10.0",
-            "org.postgresql:postgresql:42.7.3",
+            "org.postgresql:postgresql:42.7.3"
+            "hadoop-aws-3.3.4.jar",
+            "aws-java-sdk-bundle-1.12.367.jar",
         ]),
     },
     verbose=True,
