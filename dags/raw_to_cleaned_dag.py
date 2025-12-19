@@ -1,13 +1,17 @@
 from datetime import datetime
+
 from airflow import DAG
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 
+# Для MinIO регион может быть любым, но AWS SDK v2 его требует.
+AWS_REGION = "us-east-1"
+
 with DAG(
-    dag_id="raw_to_cleaned",
-    start_date=datetime(2025, 1, 1),
-    schedule=None,
-    catchup=False,
-    tags=["spark", "cleaned", "raw"],
+        dag_id="raw_to_cleaned",
+        start_date=datetime(2025, 1, 1),
+        schedule=None,
+        catchup=False,
+        tags=["spark", "cleaned", "raw", "iceberg"],
 ) as dag:
 
     raw_to_cleaned = SparkSubmitOperator(
@@ -17,23 +21,41 @@ with DAG(
         verbose=True,
         conf={
             "spark.executor.cores": "1",
-            "spark.cores.max": "2",
-            "spark.executor.memory": "1536m",
-            "spark.driver.memory": "1536m",
+            "spark.cores.max": "1",
+            "spark.executor.memory": "512m",
+            "spark.driver.memory": "512m",
 
             "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
-
             "spark.sql.catalog.hive_cat": "org.apache.iceberg.spark.SparkCatalog",
             "spark.sql.catalog.hive_cat.type": "hive",
             "spark.sql.catalog.hive_cat.uri": "thrift://hive-metastore:9083",
             "spark.sql.catalog.hive_cat.warehouse": "s3a://warehouse/",
+
             "spark.sql.catalog.hive_cat.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
+
+            "spark.sql.catalog.hive_cat.s3.endpoint": "http://minio:9000",
+            "spark.sql.catalog.hive_cat.s3.path-style-access": "true",
+            "spark.sql.catalog.hive_cat.s3.access-key-id": "admin",
+            "spark.sql.catalog.hive_cat.s3.secret-access-key": "password",
+            "spark.sql.catalog.hive_cat.s3.region": AWS_REGION,
+
+
+            "spark.driverEnv.AWS_REGION": AWS_REGION,
+            "spark.executorEnv.AWS_REGION": AWS_REGION,
+            "spark.hadoop.aws.region": AWS_REGION,
 
             "spark.hadoop.fs.s3a.endpoint": "http://minio:9000",
             "spark.hadoop.fs.s3a.path.style.access": "true",
             "spark.hadoop.fs.s3a.access.key": "admin",
             "spark.hadoop.fs.s3a.secret.key": "password",
             "spark.hadoop.fs.s3a.connection.ssl.enabled": "false",
+
+            "spark.sql.warehouse.dir": "s3a://warehouse/",
+            "spark.hadoop.hive.metastore.warehouse.dir": "s3a://warehouse/",
+
+            "spark.driver.extraJavaOptions": "-Daws.region=us-east-1",
+            "spark.executor.extraJavaOptions": "-Daws.region=us-east-1",
+
         },
         packages=(
             "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.10.0,"
