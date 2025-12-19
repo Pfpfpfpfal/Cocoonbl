@@ -1,7 +1,40 @@
 services:
+  spark-master:
+    image: spark:3.4
+    container_name: spark-master
+    networks:
+      coc-net:
+    volumes:
+      - ../spark-conf:/opt/spark/conf
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+    command: >
+      bash -lc "/opt/spark/sbin/start-master.sh --host spark-master --port 7077 --webui-port 8080 && tail -f /opt/spark/logs/*master*.out"
+
+  spark-worker:
+    image: spark:3.4
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    networks:
+      coc-net:
+    volumes:
+      - ../spark-conf:/opt/spark/conf
+    environment:
+      SPARK_WORKER_CORES: "2"
+      SPARK_WORKER_MEMORY: "2g"
+    ports:
+      - "8081:8081"
+    command: >
+      bash -lc "/opt/spark/sbin/start-worker.sh spark://spark-master:7077 --webui-port 8081 && tail -f /opt/spark/logs/*worker*.out"
+
   spark:
     image: spark:3.4
     container_name: spark
+    depends_on:
+      - spark-master
+      - spark-worker
     networks:
       coc-net:
     volumes:
@@ -18,6 +51,7 @@ services:
       AWS_DEFAULT_REGION: us-east-1
       AWS_ACCESS_KEY_ID: admin
       AWS_SECRET_ACCESS_KEY: password
+      SPARK_MASTER: spark://spark-master:7077
     command: >
       jupyter lab
        --ip=0.0.0.0

@@ -8,7 +8,7 @@ spark = (
 )
 
 print("=" * 60)
-print("SparkSession STARTED")
+print("😐SparkSession STARTED😐")
 print("App name:", spark.sparkContext.appName)
 print("Master:", spark.sparkContext.master)
 print("Spark version:", spark.version)
@@ -17,5 +17,5 @@ print("=" * 60)
 
 time.sleep(10)
 
-#spark.stop()
-#print("SparkSession STOPPED")
+spark.stop()
+print("😀SparkSession STOPPED😀")
