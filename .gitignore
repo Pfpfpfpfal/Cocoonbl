@@ -7,3 +7,4 @@
 /spark-image/jars
 /dags/__pycache__
 /dags/jobs/__pycache__
+/service/__pycache__

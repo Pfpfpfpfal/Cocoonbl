@@ -30,6 +30,11 @@ docker compose -f airflow.yml up -d airflow-init
 ```bash
 docker compose -f airflow.yml up -d scheduler webserver
 ```
+#### Connections
+Задать connections airflow
+spark: `spark://spark-master:7077`
+gnn_service: `http://host.docker.internal:5055`
+lgbm_service: `http://host.docker.internal:5056`
 ## Data server
 Поднять сервер для скачивания данных
 ```bash
@@ -57,7 +62,8 @@ go get github.com/trinodb/trino-go-client
 go run main.go
 ```
 ## Python
-Библиотеки для обучения и запуска моделей моделей находятся в `requirements_modelname.txt`
+Библиотеки для обучения и запуска моделей моделей находятся в `requirementsmodelname.txt`
+Лучше запускать через `Comand Prompt`
 ### Python lib gnn
 ```bash
 py -3.11 -m venv gnn-env
@@ -68,7 +74,7 @@ gnn-env\Scripts\activate
 ```
 
 ```bash
-pip install -r requirements_gnn.txt
+pip install -r requirementsgnn.txt
 ```
 ### Python lib lgbm
 ```bash
@@ -80,9 +86,43 @@ lgbm-env\Scripts\activate
 ```
 
 ```bash
-pip install -r requirements_lgbm.txt
+pip install -r requirementslgbm.txt
 ```
-
 ## Описание Dag-ов
 **init_namespaces** - создание слоев `raw`, `cleaned`, `features`, `marts`, `graph` в S3
-**csv_to_raw** - кладет файлы csv в S3 в формате `parquet`
+
+**csv_to_raw** - кладет файлы csv в S3 в формате `parquet` как объекты
+
+**raw_to_cleaned** - подготавливает и перекладывает объекты `parquet` в таблицу Iceberg
+
+**cleaned_to_features** - собирает признаки для моделей
+
+**export_gnn_graph** - собирает признаки для `GNN`
+
+**gnn_runner** - прогоняет данные через модель `GNN`
+
+**import_join** - соединяет данные прошедшие через модель `GNN` и соединяет с данными из `features`
+
+**export_test_dataset** - выгружает данные `test` из Iceberg таблицы как объект в S3
+
+**lgbm_runner** - прогоняет данные через модель `lgbm` и загружает объект в S3
+
+**import_scored_to_marts** - перекладывает данные из объекта S3 в Iceberg таблицу
+
+**scored_to_clustered** - собирает данные в группы для отображения
+
+**all_pipeline_dag** - один общий dag
+### Запуск DAG-ов
+**init_namespaces** -> **all_pipeline_dag**
+### Запуск fastapi
+- GNN
+```bash
+set GNN_API_TOKEN=supersecret
+python -m uvicorn gnn_service:app --host 0.0.0.0 --port 5055
+```
+
+- LGBM
+```bash
+set GNN_API_TOKEN=supersecret
+python -m uvicorn lgbm_service:app --host 0.0.0.0 --port 5056
+```

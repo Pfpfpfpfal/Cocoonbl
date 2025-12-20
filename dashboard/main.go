@@ -651,8 +651,8 @@ func main() {
 		c.JSON(http.StatusOK, GraphResp{Nodes: outNodes, Edges: edges})
 		})
 
-	log.Println("Dashboard listening on :8080")
-	if err := r.Run(":8080"); err != nil {
+	log.Println("Dashboard listening on :8087")
+	if err := r.Run(":8087"); err != nil {
 		log.Fatal(err)
 	}
 }
