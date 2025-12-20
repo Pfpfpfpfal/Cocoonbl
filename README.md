@@ -90,7 +90,15 @@ pip install -r requirements_lgbm.txt
 ## Описание Dag-ов
 **init_namespaces** - создание слоев `raw`, `cleaned`, `features`, `marts`, `graph` в S3
 
-**csv_to_raw** - кладет файлы csv в S3 в формате `parquet`
+**csv_to_raw** - кладет файлы csv в S3 в формате `parquet` как объекты
+
+**raw_to_cleaned** - подготавливает и перекладывает объекты `parquet` в таблицу Iceberg
+
+**cleaned_to_features** - собирает признаки для моделей
+
+**export_gnn_graph** - собирает признаки для `GNN`
+
+**gnn_runner** - прогоняет данные через модель `GNN`
 
 ### Запуск fastapi
 - GNN
