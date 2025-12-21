@@ -6,15 +6,12 @@ from airflow.providers.http.operators.http import SimpleHttpOperator
 
 AWS_REGION = "us-east-1"
 
-# Общие Spark-конфиги (я собрал их в одну переменную, как в твоих spark dag'ах)
 SPARK_CONF = {
-    # ресурсы можно править здесь глобально
     "spark.executor.memory": "2g",
     "spark.driver.memory": "1g",
     "spark.executor.cores": "2",
     "spark.cores.max": "2",
 
-    # Iceberg + catalog
     "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
     "spark.sql.catalog.hive_cat": "org.apache.iceberg.spark.SparkCatalog",
     "spark.sql.catalog.hive_cat.type": "hive",
@@ -22,7 +19,6 @@ SPARK_CONF = {
     "spark.sql.catalog.hive_cat.warehouse": "s3a://warehouse/",
     "spark.sql.catalog.hive_cat.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
 
-    # MinIO/S3
     "spark.sql.catalog.hive_cat.s3.endpoint": "http://minio:9000",
     "spark.sql.catalog.hive_cat.s3.path-style-access": "true",
     "spark.sql.catalog.hive_cat.s3.access-key-id": "admin",
@@ -44,7 +40,6 @@ SPARK_CONF = {
     "spark.sql.warehouse.dir": "s3a://warehouse/",
     "spark.hadoop.hive.metastore.warehouse.dir": "s3a://warehouse/",
 
-    # можно уменьшить если не хочешь много партиций в shuffle
     "spark.sql.shuffle.partitions": "200",
 }
 
