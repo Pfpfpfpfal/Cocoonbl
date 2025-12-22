@@ -1,17 +1,13 @@
 import os
 from pathlib import Path
 from typing import Tuple, Dict, List
-
 import pandas as pd
 import numpy as np
-
 import torch
 from torch import nn
-
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import HeteroConv, SAGEConv
 from sklearn.model_selection import train_test_split
-
 import trino
 import boto3
 
@@ -28,13 +24,11 @@ TRINO_SCHEMA = os.getenv("TRINO_SCHEMA", "graph")
 S3_ENDPOINT = os.getenv("S3_ENDPOINT", "http://localhost:9000")
 S3_BUCKET = os.getenv("S3_BUCKET", "warehouse")
 S3_KEY = os.getenv("S3_KEY", "features.db/gnn_features/txn_gnn_features.parquet")
-
 S3_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "admin")
 S3_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "password")
 
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "./outputs/gnn_train"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
 
 # ---------------------------
 # trino helpers
@@ -49,10 +43,8 @@ def trino_df(sql: str) -> pd.DataFrame:
     )
     return pd.read_sql(sql, conn)
 
-
 def tbl(name: str) -> str:
     return f"{name}"
-
 
 # ---------------------------
 # s3 helpers
@@ -65,7 +57,6 @@ def s3_client():
         aws_secret_access_key=S3_SECRET_KEY,
     )
 
-
 def ensure_bucket_exists(bucket: str):
     s3 = s3_client()
     try:
@@ -73,11 +64,9 @@ def ensure_bucket_exists(bucket: str):
     except Exception:
         s3.create_bucket(Bucket=bucket)
 
-
 def upload_file_to_s3(local_path: Path, bucket: str, key: str):
     s3 = s3_client()
     s3.upload_file(str(local_path), bucket, key)
-
 
 # ---------------------------
 # grapgh building
@@ -88,10 +77,8 @@ def build_id_index_map(series: pd.Series) -> Tuple[Dict[str, int], List[str]]:
     id2idx = {v: i for i, v in enumerate(uniq_sorted)}
     return id2idx, uniq_sorted
 
-
 def ones_features(n: int, dim: int = 8) -> torch.Tensor:
     return torch.ones((n, dim), dtype=torch.float32)
-
 
 def make_edge_index(
     df_edges: pd.DataFrame,
@@ -112,14 +99,15 @@ def make_edge_index(
 
     edge_index = torch.from_numpy(np.vstack([src, dst])).long()
     return edge_index
+
 def build_hetero_data_from_trino() -> Tuple[HeteroData, pd.DataFrame, Dict[str, int]]:
 
     print("Reading nodes from Trino...")
     customers_df = trino_df(f"SELECT customer_id FROM {tbl('nodes_customers')}")
-    cards_df     = trino_df(f"SELECT card_id FROM {tbl('nodes_cards')}")
-    devices_df   = trino_df(f"SELECT device_id FROM {tbl('nodes_devices')}")
-    emails_df    = trino_df(f"SELECT email FROM {tbl('nodes_emails')}")
-    txns_df      = trino_df(f"SELECT transaction_id FROM {tbl('nodes_transactions')}")
+    cards_df = trino_df(f"SELECT card_id FROM {tbl('nodes_cards')}")
+    devices_df = trino_df(f"SELECT device_id FROM {tbl('nodes_devices')}")
+    emails_df = trino_df(f"SELECT email FROM {tbl('nodes_emails')}")
+    txns_df = trino_df(f"SELECT transaction_id FROM {tbl('nodes_transactions')}")
 
     print("Reading labels from Trino...")
     txn_labels_df = trino_df(f"SELECT transaction_id, label FROM {tbl('labels_transactions')}")
@@ -127,23 +115,23 @@ def build_hetero_data_from_trino() -> Tuple[HeteroData, pd.DataFrame, Dict[str, 
     print("Building id maps...")
     cust_id2idx, cust_ids = build_id_index_map(customers_df["customer_id"])
     card_id2idx, card_ids = build_id_index_map(cards_df["card_id"])
-    dev_id2idx, dev_ids   = build_id_index_map(devices_df["device_id"])
+    dev_id2idx, dev_ids = build_id_index_map(devices_df["device_id"])
     email_id2idx, email_ids = build_id_index_map(emails_df["email"])
-    txn_id2idx, txn_ids   = build_id_index_map(txns_df["transaction_id"])
+    txn_id2idx, txn_ids = build_id_index_map(txns_df["transaction_id"])
 
     data = HeteroData()
-    data["customer"].x    = ones_features(len(cust_ids))
-    data["card"].x        = ones_features(len(card_ids))
-    data["device"].x      = ones_features(len(dev_ids))
-    data["email"].x       = ones_features(len(email_ids))
+    data["customer"].x = ones_features(len(cust_ids))
+    data["card"].x = ones_features(len(card_ids))
+    data["device"].x = ones_features(len(dev_ids))
+    data["email"].x = ones_features(len(email_ids))
     data["transaction"].x = ones_features(len(txn_ids))
 
     print("Reading edges from Trino...")
     edges_cust_card_df = trino_df(f"SELECT customer_id, card_id FROM {tbl('edges_customer_card')}")
-    edges_card_dev_df  = trino_df(f"SELECT card_id, device_id FROM {tbl('edges_card_device')}")
+    edges_card_dev_df = trino_df(f"SELECT card_id, device_id FROM {tbl('edges_card_device')}")
     edges_card_email_df= trino_df(f"SELECT card_id, email FROM {tbl('edges_card_email')}")
-    edges_cust_txn_df  = trino_df(f"SELECT customer_id, transaction_id FROM {tbl('edges_customer_txn')}")
-    edges_txn_dev_df   = trino_df(f"SELECT transaction_id, device_id FROM {tbl('edges_txn_device')}")
+    edges_cust_txn_df = trino_df(f"SELECT customer_id, transaction_id FROM {tbl('edges_customer_txn')}")
+    edges_txn_dev_df = trino_df(f"SELECT transaction_id, device_id FROM {tbl('edges_txn_device')}")
 
     print("Building edge_index tensors...")
     data["customer", "uses_card", "card"].edge_index = make_edge_index(
@@ -182,7 +170,6 @@ def build_hetero_data_from_trino() -> Tuple[HeteroData, pd.DataFrame, Dict[str, 
     print(f"Graph ready: txn_nodes={num_txn}, labeled_txn={train_mask.sum().item()}")
     return data, txn_labels_df, txn_id2idx
 
-
 # ---------------------------
 # model
 # ---------------------------
@@ -201,7 +188,6 @@ class FraudGNN(nn.Module):
         tx_x = x_dict["transaction"]
         logits = self.lin_out(tx_x).squeeze(-1)
         return logits, tx_x
-
 
 # ---------------------------
 # train + export

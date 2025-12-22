@@ -1,7 +1,6 @@
 from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.window import Window
 
-
 def build_features(spark: SparkSession) -> None:
     df = spark.table("hive_cat.cleaned.transactions")
     df = df.filter(F.col("customer_id").isNotNull())
@@ -81,14 +80,12 @@ def build_features(spark: SparkSession) -> None:
         .createOrReplace()
     )
 
-
 def main():
     spark = SparkSession.builder.appName("cleaned_to_features").getOrCreate()
     try:
         build_features(spark)
     finally:
         spark.stop()
-
 
 if __name__ == "__main__":
     main()

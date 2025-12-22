@@ -36,7 +36,6 @@ OUT_PARQUET = OUTPUT_DIR / "txn_gnn_features.parquet"
 
 EMB_KEEP = 16
 
-
 # ---------------------------
 # Trino helpers
 # ---------------------------
@@ -49,7 +48,6 @@ def trino_df(sql: str) -> pd.DataFrame:
         schema=TRINO_SCHEMA,
     )
     return pd.read_sql(sql, conn)
-
 
 def tbl(name: str) -> str:
     return f"{name}"
@@ -75,10 +73,8 @@ def build_id_index_map(series: pd.Series) -> Tuple[Dict[str, int], List[str]]:
     id2idx = {v: i for i, v in enumerate(uniq_sorted)}
     return id2idx, uniq_sorted
 
-
 def ones_features(n: int, dim: int = 8) -> torch.Tensor:
     return torch.ones((n, dim), dtype=torch.float32)
-
 
 def make_edge_index(
     df_edges: pd.DataFrame,
@@ -99,7 +95,6 @@ def make_edge_index(
 
     edge_index = torch.from_numpy(np.vstack([src, dst])).long()
     return edge_index
-
 
 def build_hetero_data_from_trino_for_infer() -> Tuple[HeteroData, Dict[str, int]]:
     print("Reading nodes from Trino...")
@@ -149,7 +144,6 @@ def build_hetero_data_from_trino_for_infer() -> Tuple[HeteroData, Dict[str, int]
     print(f"Graph ready: txn_nodes={len(txn_ids)}")
     return data, txn_id2idx
 
-
 # ---------------------------
 # Model
 # ---------------------------
@@ -168,7 +162,6 @@ class FraudGNN(nn.Module):
         tx_x = x_dict["transaction"]
         logits = self.lin_out(tx_x).squeeze(-1)
         return logits, tx_x
-
 
 def run_infer():
     device = torch.device("cpu")

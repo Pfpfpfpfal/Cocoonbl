@@ -19,7 +19,6 @@ SCORED_PATH = os.getenv(
 
 MODEL_PATH = os.getenv("LGBM_MODEL_PATH", "./ml/lgbm_fraud_gnn.pkl")
 
-
 def make_fs():
     return s3fs.S3FileSystem(
         key=S3_ACCESS_KEY,
@@ -27,14 +26,12 @@ def make_fs():
         client_kwargs={"endpoint_url": S3_ENDPOINT},
     )
 
-
 def s3_to_bucket_prefix(s3_url: str):
     if not s3_url.startswith("s3://"):
         raise ValueError(f"Expected s3://... got: {s3_url}")
     p = s3_url[len("s3://"):]
     bucket, _, rest = p.partition("/")
     return bucket, rest.rstrip("/")
-
 
 def read_parquet_s3(s3_prefix_url: str) -> pd.DataFrame:
     fs = make_fs()
@@ -46,7 +43,6 @@ def read_parquet_s3(s3_prefix_url: str) -> pd.DataFrame:
 
     return pd.read_parquet(path, engine="pyarrow", filesystem=fs)
 
-
 def write_parquet_s3(df: pd.DataFrame, s3_file_url: str) -> None:
     fs = make_fs()
     bucket, key = s3_to_bucket_prefix(s3_file_url)
@@ -55,7 +51,6 @@ def write_parquet_s3(df: pd.DataFrame, s3_file_url: str) -> None:
     with fs.open(path, "wb") as f:
         df.to_parquet(f, index=False, engine="pyarrow")
     print(f"Uploaded parquet to: s3://{path}")
-
 
 def main():
     print(f"Loading test data from: {TEST_PATH}")
@@ -81,7 +76,6 @@ def main():
     write_parquet_s3(df_test, out_file)
 
     print(f"Scored test saved to: {out_file}")
-
 
 if __name__ == "__main__":
     main()

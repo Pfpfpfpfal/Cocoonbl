@@ -46,13 +46,12 @@ def import_gnn_to_features(
         .createOrReplace()
     )
 
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--gnn-path",
         default="s3a://warehouse/features.db/gnn_features/txn_gnn_features.parquet",
-        help="Path to GNN parquet on S3 (use s3a://...)",
+        help="Path to GNN parquet on S3",
     )
     args = parser.parse_args()
 
@@ -61,7 +60,6 @@ def main():
         import_gnn_to_features(spark, gnn_path=args.gnn_path)
     finally:
         spark.stop()
-
 
 if __name__ == "__main__":
     main()

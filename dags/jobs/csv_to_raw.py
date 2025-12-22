@@ -22,7 +22,6 @@ SECRET_KEY = "password"
 
 CHUNK_ROWS = 50_000
 
-
 def _safe_name(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.-]+", "_", name)
 
@@ -34,7 +33,6 @@ def _download_stream_to_file(url: str, out_path: str, timeout=300):
             for chunk in r.iter_content(chunk_size=1024 * 1024):
                 if chunk:
                     f.write(chunk)
-
 
 def csv_to_parquet_chunks_and_upload():
     s3 = boto3.client(
@@ -79,8 +77,6 @@ def csv_to_parquet_chunks_and_upload():
                 print(f"Uploaded: s3://{BUCKET}/{s3_key} (rows={rows})")
 
             print(f"Done {fname}: total_rows={total_rows}, parts={part}")
-
-
 
 def task_callable(**_context):
     csv_to_parquet_chunks_and_upload()
