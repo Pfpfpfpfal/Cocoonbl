@@ -2,7 +2,6 @@ from pyspark.sql import SparkSession, functions as F
 from pyspark.ml.feature import VectorAssembler, StandardScaler
 from pyspark.ml.clustering import BisectingKMeans
 
-
 def run(spark: SparkSession, k: int = 6) -> None:
     df = (
         spark.table("hive_cat.marts.scored_transactions")

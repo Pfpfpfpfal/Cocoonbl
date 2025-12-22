@@ -64,7 +64,6 @@ def build_clean(df_txn, df_id, dataset_label: str, has_target: bool):
 
     return df.select(*important_cols)
 
-
 def main():
     spark = SparkSession.builder.appName("raw_to_cleaned").getOrCreate()
 
@@ -74,12 +73,12 @@ def main():
     RAW_BASE = "s3a://warehouse/raw.db"
 
     train_txn = spark.read.parquet(f"{RAW_BASE}/train_transaction/")
-    train_id  = spark.read.parquet(f"{RAW_BASE}/train_identity/")
-    test_txn  = spark.read.parquet(f"{RAW_BASE}/test_transaction/")
-    test_id   = spark.read.parquet(f"{RAW_BASE}/test_identity/")
+    train_id = spark.read.parquet(f"{RAW_BASE}/train_identity/")
+    test_txn = spark.read.parquet(f"{RAW_BASE}/test_transaction/")
+    test_id = spark.read.parquet(f"{RAW_BASE}/test_identity/")
 
     train_clean = build_clean(train_txn, train_id, "train", has_target=True)
-    test_clean  = build_clean(test_txn,  test_id,  "test",  has_target=False)
+    test_clean = build_clean(test_txn,  test_id,  "test",  has_target=False)
 
     (
         train_clean
@@ -97,7 +96,6 @@ def main():
     )
 
     spark.stop()
-
 
 if __name__ == "__main__":
     main()

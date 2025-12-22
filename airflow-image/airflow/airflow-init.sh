@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 set -euo pipefail
 
 echo "[airflow-init] running migrations"

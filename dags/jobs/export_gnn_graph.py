@@ -8,10 +8,10 @@ def export_gnn_graph(spark: SparkSession,src_table: str = "hive_cat.features.tra
     df_all = (
         df
         .withColumn("transaction_id_str", F.col("transaction_id").cast("string"))
-        .withColumn("customer_id_str",   F.col("customer_id").cast("string"))
-        .withColumn("card_id_str",       F.col("card_id").cast("string"))
-        .withColumn("device_id_str",     F.col("device_id").cast("string"))
-        .withColumn("email_str",         F.col("email").cast("string"))
+        .withColumn("customer_id_str", F.col("customer_id").cast("string"))
+        .withColumn("card_id_str", F.col("card_id").cast("string"))
+        .withColumn("device_id_str", F.col("device_id").cast("string"))
+        .withColumn("email_str", F.col("email").cast("string"))
     )
 
     df_train = (
