@@ -16,32 +16,22 @@ with DAG(
         conn_id="spark",
         application="/opt/airflow/dags/jobs/alerts_from_s3_to_telegram.py",
         env_vars={
-            # Берем из env Airflow-контейнера (scheduler)
             "TG_BOT_TOKEN": os.getenv("TG_BOT_TOKEN", ""),
             "TG_CHAT_ID": os.getenv("TG_CHAT_ID", ""),
 
-            # Job params
             "SCORED_S3_PATH": os.getenv("SCORED_S3_PATH", "s3a://warehouse/marts.db/scored_transactions/data"),
             "ALERT_THRESHOLD": os.getenv("ALERT_THRESHOLD", "0.90"),
             "MAX_ALERTS": os.getenv("MAX_ALERTS", "20"),
 
-            # --- NEW: idempotency + scanning mode ---
-            # Where we keep cursor + already-sent tx ids (in S3/MinIO)
             "STATE_S3_PATH": os.getenv("STATE_S3_PATH", "s3a://warehouse/_state/fraud_alerts_state.json"),
 
-            # incremental (default) scans only event_date partitions after last_event_date from state
-            # all scans all partitions but still won't resend tx alerts due to state
             "PROCESS_MODE": os.getenv("PROCESS_MODE", "incremental"),
 
-            # optional: ping on job start (default off)
             "SEND_START_PING": os.getenv("SEND_START_PING", "0"),
 
-            # optional: state limits
             "STATE_KEEP_DAYS": os.getenv("STATE_KEEP_DAYS", "14"),
             "STATE_KEEP_IDS_PER_DAY": os.getenv("STATE_KEEP_IDS_PER_DAY", "5000"),
 
-            # можно задать EVENT_DATE при необходимости
-            # "EVENT_DATE": "2018-01-31",
         },
         conf={
             "spark.executor.cores": "1",

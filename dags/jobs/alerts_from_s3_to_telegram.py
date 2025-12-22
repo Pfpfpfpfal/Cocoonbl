@@ -4,9 +4,7 @@ import time
 import json
 import requests
 from typing import Optional, List, Tuple, Dict, Any
-
 from pyspark.sql import SparkSession, functions as F
-
 
 # ---------------------------
 # Telegram
@@ -37,7 +35,6 @@ def _tg_send(text: str) -> None:
 
     raise last_err
 
-
 # ---------------------------
 # Utils
 # ---------------------------
@@ -48,7 +45,6 @@ def _pick_col(cols: List[str], candidates: List[str]) -> Optional[str]:
             return c
     return None
 
-
 def _hadoop_fs(spark: SparkSession, any_path: str):
     jvm = spark._jvm
     hconf = spark._jsc.hadoopConfiguration()
@@ -56,17 +52,13 @@ def _hadoop_fs(spark: SparkSession, any_path: str):
     fs = jvm.org.apache.hadoop.fs.FileSystem.get(uri, hconf)
     return jvm, fs
 
-
 def _read_text(spark: SparkSession, path: str) -> Optional[str]:
     jvm, fs = _hadoop_fs(spark, path)
     p = jvm.org.apache.hadoop.fs.Path(path)
     if not fs.exists(p):
         return None
-    # Hadoop FS doesn't have a trivial "readAll" in py, use Java streams
     stream = fs.open(p)
     try:
-        # org.apache.hadoop.io.IOUtils#toByteArray is not always on classpath;
-        # use java.io.ByteArrayOutputStream
         baos = jvm.java.io.ByteArrayOutputStream()
         buf = jvm.java.lang.reflect.Array.newInstance(jvm.java.lang.Byte.TYPE, 4096)
         while True:
@@ -77,7 +69,6 @@ def _read_text(spark: SparkSession, path: str) -> Optional[str]:
         return baos.toString("UTF-8")
     finally:
         stream.close()
-
 
 def _write_text_atomic(spark: SparkSession, path: str, text: str) -> None:
     jvm, fs = _hadoop_fs(spark, path)
@@ -101,12 +92,7 @@ def _write_text_atomic(spark: SparkSession, path: str, text: str) -> None:
         fs.delete(p, True)
     fs.rename(tmp, p)
 
-
 def _list_event_date_partitions(spark: SparkSession, base_path: str) -> List[Tuple[str, str]]:
-    """
-    base_path: s3a://.../data
-    returns list of (event_date, partition_path) sorted asc by date.
-    """
     jvm, fs = _hadoop_fs(spark, base_path)
     p = jvm.org.apache.hadoop.fs.Path(base_path)
     if not fs.exists(p):
@@ -127,7 +113,6 @@ def _list_event_date_partitions(spark: SparkSession, base_path: str) -> List[Tup
     out.sort(key=lambda x: x[0])
     return out
 
-
 def _load_state(spark: SparkSession, state_path: str) -> Dict[str, Any]:
     raw = _read_text(spark, state_path)
     if not raw:
@@ -142,15 +127,9 @@ def _load_state(spark: SparkSession, state_path: str) -> Dict[str, Any]:
             st["sent_tx_ids"] = {}
         return st
     except Exception:
-        # corrupt state -> start fresh
         return {"last_event_date": None, "sent_tx_ids": {}}
 
-
 def _trim_state(state: Dict[str, Any], keep_days: int = 14, keep_ids_per_day: int = 5000) -> Dict[str, Any]:
-    """
-    Prevent state from growing forever.
-    Keeps only last N event_date keys and max M ids per date.
-    """
     sent = state.get("sent_tx_ids", {})
     if not isinstance(sent, dict):
         state["sent_tx_ids"] = {}
@@ -170,7 +149,6 @@ def _trim_state(state: Dict[str, Any], keep_days: int = 14, keep_ids_per_day: in
     state["sent_tx_ids"] = sent
     return state
 
-
 def main() -> None:
     spark = SparkSession.builder.appName("alerts_from_scored_to_telegram").getOrCreate()
 
@@ -183,41 +161,33 @@ def main() -> None:
         threshold = float(os.getenv("ALERT_THRESHOLD", "0.90"))
         max_alerts = int(os.getenv("MAX_ALERTS", "20"))
 
-        # If set, process only this specific partition date (YYYY-MM-DD).
         event_date_env = os.getenv("EVENT_DATE")
 
-        # How to scan partitions:
-        # - incremental (default): only partitions after last_event_date from state
-        # - all: scan all partitions (still won't re-send tx alerts due to state)
         process_mode = os.getenv("PROCESS_MODE", "incremental").strip().lower()
 
-        # State path (must be on the same S3A/MinIO you read from)
         state_path = os.getenv(
             "STATE_S3_PATH",
             "s3a://warehouse/_state/fraud_alerts_state.json"
         ).strip()
 
-        # Optional noise control (default off)
         send_start_ping = os.getenv("SEND_START_PING", "0") in ("1", "true", "True", "yes", "Y")
 
         if send_start_ping:
-            _tg_send("✅ Fraud alerts job started")
+            _tg_send("Fraud alerts job started")
 
-        # ---- Load state (idempotency) ----
         state = _load_state(spark, state_path)
-        last_event_date = state.get("last_event_date")  # may be None
+        last_event_date = state.get("last_event_date")
         sent_tx_ids: Dict[str, List[str]] = state.get("sent_tx_ids", {})
         if not isinstance(sent_tx_ids, dict):
             sent_tx_ids = {}
             state["sent_tx_ids"] = sent_tx_ids
 
-        # ---- Determine partitions to process ----
         if event_date_env:
             partitions = [(event_date_env, f"{scored_base_path}/event_date={event_date_env}")]
         else:
             partitions = _list_event_date_partitions(spark, scored_base_path)
             if not partitions:
-                _tg_send(f"⚠️ No partitions found under:\n{scored_base_path}")
+                _tg_send(f"No partitions found under:\n{scored_base_path}")
                 return
 
             if process_mode != "all" and last_event_date:
@@ -227,7 +197,6 @@ def main() -> None:
             print("No new partitions to process. last_event_date=", last_event_date)
             return
 
-        # ---- Process each partition ----
         any_new_alerts = False
         newest_processed_date = last_event_date
 
@@ -238,7 +207,6 @@ def main() -> None:
 
             if df.limit(1).count() == 0:
                 print("Empty partition:", part_date)
-                # still move cursor so we don't keep re-scanning empty partitions forever
                 newest_processed_date = max(newest_processed_date, part_date) if newest_processed_date else part_date
                 continue
 
@@ -254,12 +222,11 @@ def main() -> None:
 
             if missing:
                 _tg_send(
-                    "⚠️ Fraud alerts job error\n"
+                    "Fraud alerts job error\n"
                     f"Missing columns: {', '.join(missing)}\n"
                     f"Path: {part_path}\n"
                     f"Columns: {df.columns}"
                 )
-                # don't advance cursor on schema error (so you notice it)
                 return
 
             df2 = (
@@ -271,7 +238,6 @@ def main() -> None:
                 .withColumn("fraud_label", F.col("fraud_label").cast("int"))
             )
 
-            # Candidate alerts (dedup inside partition)
             alerts_df = (
                 df2
                 .filter((F.col("fraud_label") == 1) | (F.col("fraud_score") >= F.lit(threshold)))
@@ -286,7 +252,6 @@ def main() -> None:
                 newest_processed_date = max(newest_processed_date, part_date) if newest_processed_date else part_date
                 continue
 
-            # ---- Idempotency: only send tx that were not sent before ----
             already = set(sent_tx_ids.get(part_date, []))
             new_rows = [r for r in alerts if str(r.transaction_id) not in already]
 
@@ -298,7 +263,7 @@ def main() -> None:
             any_new_alerts = True
 
             _tg_send(
-                "🚨 FRAUD ALERTS (new)\n"
+                "FRAUD ALERTS (new)\n"
                 f"new_count: {len(new_rows)}\n"
                 f"date: {part_date}\n"
                 f"threshold: {threshold}\n"
@@ -307,7 +272,7 @@ def main() -> None:
 
             for r in new_rows:
                 _tg_send(
-                    "🚨 FRAUD ALERT\n"
+                    "FRAUD ALERT\n"
                     f"tx: {r.transaction_id}\n"
                     f"score: {r.fraud_score}\n"
                     f"label: {r.fraud_label}\n"
@@ -318,7 +283,6 @@ def main() -> None:
             sent_tx_ids[part_date] = list(already)
             newest_processed_date = max(newest_processed_date, part_date) if newest_processed_date else part_date
 
-        # ---- Persist state (cursor + sent ids) ----
         if newest_processed_date:
             state["last_event_date"] = newest_processed_date
         state["sent_tx_ids"] = sent_tx_ids
@@ -332,7 +296,6 @@ def main() -> None:
 
     finally:
         spark.stop()
-
 
 if __name__ == "__main__":
     main()
